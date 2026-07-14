@@ -1,0 +1,16 @@
+{
+  "note": "PLACEHOLDER MARKET PRICES — replace with real figures in /admin before launch. The site adds FlyRate's profit margin (default 3.5%, editable in /admin) on top of these automatically. Almost all corridors: rate = marketPrice * (1 + margin) and the calculator divides by it. Exceptions — SAR→ZAR and QAR→ZAR: rate = marketPrice * (1 - margin) and the calculator multiplies by it.",
+  "rates": [
+    { "from": "SDG", "to": "ZAR", "marketPrice": 345 },
+    { "from": "SDG", "to": "EGP", "marketPrice": 128 },
+    { "from": "SDG", "to": "MYR", "marketPrice": 1590 },
+    { "from": "SDG", "to": "SAR", "marketPrice": 1667 },
+    { "from": "SDG", "to": "USDT", "marketPrice": 6250 },
+    { "from": "EGP", "to": "ZAR", "marketPrice": 2.51 },
+    { "from": "EGP", "to": "MYR", "marketPrice": 12.08 },
+    { "from": "SAR", "to": "MYR", "marketPrice": 1.095 },
+    { "from": "SAR", "to": "ZAR", "marketPrice": 4.762 },
+    { "from": "QAR", "to": "ZAR", "marketPrice": 4.884 },
+    { "from": "AED", "to": "ZAR", "marketPrice": 0.191 }
+  ]
+}

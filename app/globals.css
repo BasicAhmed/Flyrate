@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  /* Dark theme (default — matches FlyRate's brand identity) */
+  --color-bg: 10 10 11;
+  --color-surface: 20 20 22;
+  --color-surface2: 28 28 31;
+  --color-border: 40 40 44;
+  --color-ink: 245 244 241;
+  --color-muted: 154 154 158;
+  --color-subtle: 110 110 115;
+}
+
+.light {
+  color-scheme: light;
+  --color-bg: 250 250 249;
+  --color-surface: 255 255 255;
+  --color-surface2: 243 242 239;
+  --color-border: 228 226 221;
+  --color-ink: 18 18 20;
+  --color-muted: 90 90 95;
+  --color-subtle: 140 140 145;
+}
+
+* {
+  scroll-behavior: smooth;
+}
+
+::selection {
+  background: #fe5200;
+  color: #0a0a0b;
+}
+
+:focus-visible {
+  outline: 2px solid #fe5200;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.container-page {
+  @apply mx-auto w-full max-w-6xl px-5 sm:px-8;
+}
+
+.eyebrow {
+  @apply text-xs font-semibold text-primary;
+}
+
+.section-heading {
+  @apply font-display text-3xl font-semibold tracking-tight text-ink sm:text-4xl;
+}
