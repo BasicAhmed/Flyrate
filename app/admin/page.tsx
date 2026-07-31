@@ -10,7 +10,7 @@ import {
 import { auth, firebaseEnabled } from "@/lib/firebase";
 import { getRates, setMarketPrice, computeRate, type RateRow } from "@/lib/rates";
 import { formatRate } from "@/lib/format";
-import { getMarginPercent, setMarginPercent } from "@/lib/settings";
+import { getMarginPercent, setMarginPercent, getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, getRecentSales, type SaleEntry } from "@/lib/sales";
 import { CORRIDORS, CURRENCIES } from "@/lib/corridors";
 
@@ -40,6 +40,10 @@ export default function AdminPage() {
   const [savingSale, setSavingSale] = useState(false);
   const [sales, setSales] = useState<SaleEntry[]>([]);
 
+  const [dailyTarget, setDailyTargetState] = useState(2000);
+  const [targetInput, setTargetInput] = useState("2000");
+  const [savingTarget, setSavingTarget] = useState(false);
+
   useEffect(() => {
     if (!firebaseEnabled || !auth) {
       setChecking(false);
@@ -59,6 +63,10 @@ export default function AdminPage() {
       setMarginInput(String(m));
     });
     getRecentSales(400).then(setSales);
+    getDailyTarget().then((t) => {
+      setDailyTargetState(t);
+      setTargetInput(String(t));
+    });
   }, [user]);
 
   if (!firebaseEnabled) {
@@ -121,6 +129,10 @@ export default function AdminPage() {
 
   const totalProfitShown = sales.reduce((sum, s) => sum + s.profit, 0);
   const totalUsdShown = sales.reduce((sum, s) => sum + s.usdSold, 0);
+
+  const todaysSale = sales.find((s) => s.date === todayStr());
+  const todaysUsd = todaysSale?.usdSold ?? 0;
+  const targetProgress = dailyTarget > 0 ? Math.min(100, (todaysUsd / dailyTarget) * 100) : 0;
 
   const currentMonth = todayStr().slice(0, 7); // YYYY-MM
   const thisMonthSales = sales.filter((s) => s.date.startsWith(currentMonth));
@@ -275,11 +287,59 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Daily profit tracker */}
+      {/* Daily target */}
       <div className="mt-10 rounded-2xl border border-border bg-surface p-5">
+        <h2 className="font-display text-base font-semibold text-ink">الهدف اليومي</h2>
+        <p className="mt-1 text-xs text-subtle">
+          حدد هدف البيع اليومي بالدولار، وشريط التقدم يتحدث تلقائياً كل ما تضيف مبلغ.
+        </p>
+        <div className="mt-4 flex items-center gap-3" dir="ltr">
+          <span className="text-sm text-muted">$</span>
+          <input
+            type="number"
+            step="any"
+            value={targetInput}
+            onChange={(e) => setTargetInput(e.target.value)}
+            className="w-32 rounded-lg border border-border bg-surface2 px-3 py-2 text-sm text-ink"
+          />
+          <button
+            onClick={async () => {
+              setSavingTarget(true);
+              const val = parseFloat(targetInput);
+              await setDailyTarget(val);
+              setDailyTargetState(val);
+              setSavingTarget(false);
+            }}
+            className="mr-auto rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
+          >
+            {savingTarget ? "جارٍ الحفظ…" : "حفظ الهدف"}
+          </button>
+        </div>
+
+        <div className="mt-5">
+          <div className="flex items-center justify-between text-sm" dir="ltr">
+            <span className="font-mono font-semibold text-ink">
+              ${todaysUsd.toLocaleString()} / ${dailyTarget.toLocaleString()}
+            </span>
+            <span className="font-mono text-xs text-subtle">{targetProgress.toFixed(0)}%</span>
+          </div>
+          <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-surface2">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${targetProgress}%` }}
+            />
+          </div>
+          {targetProgress >= 100 && (
+            <p className="mt-2 text-xs font-semibold text-primary">🎉 وصلت الهدف اليوم!</p>
+          )}
+        </div>
+      </div>
+
+      {/* Daily profit tracker */}
+      <div className="mt-6 rounded-2xl border border-border bg-surface p-5">
         <h2 className="font-display text-base font-semibold text-ink">الأرباح اليومية</h2>
         <p className="mt-1 text-xs text-subtle">
-          أدخل إجمالي الدولار المباع في اليوم، ويُحسب الربح تلقائياً حسب الهامش الحالي ({margin}%).
+          أضف كل عملية بيع بمبلغها — تُضاف تلقائياً لإجمالي اليوم، ويُحسب الربح حسب الهامش الحالي ({margin}%).
         </p>
 
         <div className="mt-5 rounded-xl border border-primary/40 bg-primary/10 p-4">
@@ -303,13 +363,13 @@ export default function AdminPage() {
             />
           </label>
           <label className="text-xs text-subtle">
-            الدولار المباع اليوم ($)
+            مبلغ العملية ($)
             <input
               type="number"
               step="any"
               value={usdSold}
               onChange={(e) => setUsdSold(e.target.value)}
-              placeholder="1000"
+              placeholder="200"
               className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
             />
           </label>
@@ -367,7 +427,6 @@ export default function AdminPage() {
                 <tr className="border-b border-border bg-surface2 text-xs text-subtle">
                   <th className="px-4 py-2.5 text-left font-medium">Date</th>
                   <th className="px-4 py-2.5 text-left font-medium">USD Sold</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Margin</th>
                   <th className="px-4 py-2.5 text-left font-medium">Profit</th>
                 </tr>
               </thead>
@@ -376,7 +435,6 @@ export default function AdminPage() {
                   <tr key={s.date} className="border-b border-border/50">
                     <td className="px-4 py-2.5 text-left text-ink">{s.date}</td>
                     <td className="px-4 py-2.5 text-left text-muted">${s.usdSold.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-left text-subtle">{s.marginPercent}%</td>
                     <td className="px-4 py-2.5 text-left font-semibold text-primary">
                       ${s.profit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </td>
@@ -387,7 +445,6 @@ export default function AdminPage() {
                   <td className="px-4 py-2.5 text-left font-semibold text-ink">
                     ${totalUsdShown.toLocaleString()}
                   </td>
-                  <td className="px-4 py-2.5" />
                   <td className="px-4 py-2.5 text-left font-semibold text-primary">
                     ${totalProfitShown.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
