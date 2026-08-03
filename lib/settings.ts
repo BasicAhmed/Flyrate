@@ -71,3 +71,28 @@ export async function setCarRates(rates: CarRates) {
   if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
   await setDoc(doc(db, "settings", "carRates"), { ...rates, updatedAt: serverTimestamp() });
 }
+
+export interface BankAccount {
+  id: string;
+  bankName: string;
+  details: string; // free-text: account name, number, branch code, etc.
+}
+
+/** Reads the list of bank accounts renters can pay into. Public data —
+ *  shown on the self-booking page before any auth. */
+export async function getBankAccounts(): Promise<BankAccount[]> {
+  if (!firebaseEnabled || !db) return [];
+  try {
+    const snap = await getDoc(doc(db, "settings", "bankAccounts"));
+    if (!snap.exists()) return [];
+    const accounts = snap.data().accounts;
+    return Array.isArray(accounts) ? accounts : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function setBankAccounts(accounts: BankAccount[]) {
+  if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
+  await setDoc(doc(db, "settings", "bankAccounts"), { accounts, updatedAt: serverTimestamp() });
+}

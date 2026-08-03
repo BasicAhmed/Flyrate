@@ -8,9 +8,11 @@ import {
   type User,
 } from "firebase/auth";
 import { auth, firebaseEnabled } from "@/lib/firebase";
-import { getCarRates, setCarRates, type CarRates } from "@/lib/settings";
+import { getCarRates, setCarRates, getBankAccounts, setBankAccounts, type CarRates, type BankAccount } from "@/lib/settings";
 import {
   createBooking,
+  confirmPayment,
+  cancelBooking,
   markKeysHandedOver,
   completeBooking,
   computeReturnDate,
@@ -21,9 +23,11 @@ import {
 
 const RATE_LABELS: Record<RateType, string> = { day: "يوم", week: "أسبوع", month: "شهر" };
 const STATUS_LABELS: Record<CarBooking["status"], string> = {
+  awaiting_payment: "بانتظار الدفع",
   waiting: "بانتظار التسليم",
   active: "قيد التنفيذ",
   completed: "مكتمل",
+  cancelled: "ملغي",
 };
 
 function monthStr(iso: string | null) {
@@ -66,6 +70,10 @@ export default function LancerPage() {
   const [savingRates, setSavingRates] = useState(false);
   const [ratesOpen, setRatesOpen] = useState(false);
 
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [savingAccounts, setSavingAccounts] = useState(false);
+
   const [bookings, setBookings] = useState<CarBooking[]>([]);
   const [renterName, setRenterName] = useState("");
   const [renterPhone, setRenterPhone] = useState("");
@@ -96,6 +104,7 @@ export default function LancerPage() {
       setRateInputs({ day: String(r.day), week: String(r.week), month: String(r.month) });
     });
     getBookings().then(setBookings);
+    getBankAccounts().then(setAccounts);
   }, [user]);
 
   if (!firebaseEnabled) {
@@ -190,6 +199,9 @@ export default function LancerPage() {
           تسجيل الخروج
         </button>
       </div>
+      <a href="/lancer/book" target="_blank" className="mt-1 block text-xs text-primary underline underline-offset-4">
+        رابط الحجز العام للعملاء ↗
+      </a>
 
       {/* Shareable status card */}
       <div
@@ -403,7 +415,74 @@ export default function LancerPage() {
         )}
       </div>
 
-      {/* Monthly history */}
+      {/* Bank accounts (collapsed by default) */}
+      <div className="mt-6 rounded-2xl border border-border bg-surface p-5">
+        <button
+          onClick={() => setAccountsOpen((v) => !v)}
+          className="flex w-full items-center justify-between text-sm font-semibold text-ink"
+        >
+          حسابات الدفع (تظهر للعملاء)
+          <span className="text-xs text-subtle">{accountsOpen ? "إخفاء" : "تعديل"}</span>
+        </button>
+        {accountsOpen && (
+          <>
+            <div className="mt-4 space-y-3">
+              {accounts.map((acc, i) => (
+                <div key={acc.id} className="rounded-xl border border-border bg-surface2 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <input
+                      value={acc.bankName}
+                      onChange={(e) => {
+                        const next = [...accounts];
+                        next[i] = { ...acc, bankName: e.target.value };
+                        setAccounts(next);
+                      }}
+                      placeholder="اسم البنك"
+                      className="w-full rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink"
+                    />
+                    <button
+                      onClick={() => setAccounts(accounts.filter((_, idx) => idx !== i))}
+                      className="shrink-0 text-xs text-subtle underline"
+                    >
+                      حذف
+                    </button>
+                  </div>
+                  <textarea
+                    value={acc.details}
+                    onChange={(e) => {
+                      const next = [...accounts];
+                      next[i] = { ...acc, details: e.target.value };
+                      setAccounts(next);
+                    }}
+                    placeholder={"اسم الحساب: ...\nرقم الحساب: ...\nكود الفرع: ..."}
+                    dir="ltr"
+                    rows={3}
+                    className="mt-2 w-full rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-ink"
+                  />
+                </div>
+              ))}
+              <button
+                onClick={() =>
+                  setAccounts([...accounts, { id: `acc-${Date.now()}`, bankName: "", details: "" }])
+                }
+                className="w-full rounded-lg border border-dashed border-border py-2 text-xs text-subtle hover:text-ink"
+              >
+                + إضافة حساب
+              </button>
+            </div>
+            <button
+              onClick={async () => {
+                setSavingAccounts(true);
+                await setBankAccounts(accounts);
+                setSavingAccounts(false);
+              }}
+              className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
+            >
+              {savingAccounts ? "جارٍ الحفظ…" : "حفظ الحسابات"}
+            </button>
+          </>
+        )}
+      </div>
       {monthlyTotals.length > 0 && (
         <div className="mt-6">
           <h3 className="text-sm font-semibold text-ink">سجل شهري</h3>
@@ -466,8 +545,12 @@ export default function LancerPage() {
                             className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                               b.status === "active"
                                 ? "bg-primary/20 text-primary"
+                                : b.status === "awaiting_payment"
+                                ? "border border-primary/40 text-primary"
                                 : b.status === "waiting"
                                 ? "bg-surface2 text-muted border border-border"
+                                : b.status === "cancelled"
+                                ? "bg-surface2 text-subtle line-through"
                                 : "bg-surface2 text-subtle"
                             }`}
                           >
@@ -479,6 +562,10 @@ export default function LancerPage() {
                         <tr className="border-b border-border/50 bg-surface2">
                           <td colSpan={6} className="px-4 py-4">
                             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
+                              <div dir="ltr">
+                                <span className="text-subtle">رقم الحجز: </span>
+                                <span className="font-mono text-ink">{b.bookingNumber}</span>
+                              </div>
                               <div>
                                 <span className="text-subtle">البنك المستخدم: </span>
                                 <span className="text-ink">{b.bankUsed || "—"}</span>
@@ -495,6 +582,12 @@ export default function LancerPage() {
                                 <span className="text-subtle">تاريخ الحجز: </span>
                                 <span className="text-ink">{fmtDateTime(b.createdAt)}</span>
                               </div>
+                              {b.status === "awaiting_payment" && b.paymentDeadline && (
+                                <div dir="ltr">
+                                  <span className="text-subtle">مهلة الدفع حتى: </span>
+                                  <span className="text-primary">{fmtDateTime(b.paymentDeadline)}</span>
+                                </div>
+                              )}
                               {b.completedAt && (
                                 <div dir="ltr">
                                   <span className="text-subtle">تاريخ الإرجاع الفعلي: </span>
@@ -504,6 +597,34 @@ export default function LancerPage() {
                             </div>
 
                             <div className="mt-3 flex gap-2">
+                              {b.status === "awaiting_payment" && (
+                                <>
+                                  <button
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      setBusyId(b.id);
+                                      await confirmPayment(b.id);
+                                      setBookings(await getBookings());
+                                      setBusyId(null);
+                                    }}
+                                    className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
+                                  >
+                                    {busyId === b.id ? "…" : "تأكيد الدفع"}
+                                  </button>
+                                  <button
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      setBusyId(b.id);
+                                      await cancelBooking(b.id);
+                                      setBookings(await getBookings());
+                                      setBusyId(null);
+                                    }}
+                                    className="rounded-full border border-border px-4 py-2 text-xs font-semibold text-muted"
+                                  >
+                                    إلغاء
+                                  </button>
+                                </>
+                              )}
                               {b.status === "waiting" && (
                                 <button
                                   onClick={async (e) => {
