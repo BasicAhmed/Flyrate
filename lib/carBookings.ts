@@ -2,6 +2,8 @@ import {
   collection,
   addDoc,
   updateDoc,
+  setDoc,
+  deleteDoc,
   doc,
   getDocs,
   orderBy,
@@ -49,6 +51,19 @@ function genBookingNumber(): string {
   return `FR-${Date.now().toString().slice(-6)}`;
 }
 
+/** Keeps the public "bookedRanges" collection (dates only, no personal info)
+ *  in sync so the self-booking calendar can show taken dates without ever
+ *  reading renter names/phones. Called whenever a booking enters or leaves
+ *  a "blocking" state. */
+async function addBookedRange(id: string, start: string, end: string) {
+  if (!db) return;
+  await setDoc(doc(db, "bookedRanges", id), { start, end });
+}
+async function removeBookedRange(id: string) {
+  if (!db) return;
+  await deleteDoc(doc(db, "bookedRanges", id)).catch(() => {});
+}
+
 /** Used by the private /lancer dashboard — booking starts "waiting"
  *  (payment already handled in person, just needs key handover). */
 export async function createBooking(input: {
@@ -63,7 +78,7 @@ export async function createBooking(input: {
   if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
   const total = input.rate * input.quantity;
   const returnAt = computeReturnDate(new Date(input.collectionAt), input.rateType, input.quantity).toISOString();
-  await addDoc(collection(db, "carBookings"), {
+  const ref = await addDoc(collection(db, "carBookings"), {
     ...input,
     total,
     returnAt,
@@ -73,6 +88,7 @@ export async function createBooking(input: {
     createdAt: serverTimestamp(),
     completedAt: null,
   });
+  await addBookedRange(ref.id, input.collectionAt, returnAt);
 }
 
 /** Used by the PUBLIC self-booking page (no auth). Status is forced to
@@ -91,7 +107,7 @@ export async function createPublicBooking(input: {
   const returnAt = computeReturnDate(new Date(input.collectionAt), input.rateType, input.quantity).toISOString();
   const bookingNumber = genBookingNumber();
   const paymentDeadline = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
-  await addDoc(collection(db, "carBookings"), {
+  const ref = await addDoc(collection(db, "carBookings"), {
     ...input,
     total,
     returnAt,
@@ -101,6 +117,7 @@ export async function createPublicBooking(input: {
     createdAt: serverTimestamp(),
     completedAt: null,
   });
+  await addBookedRange(ref.id, input.collectionAt, returnAt);
   return bookingNumber;
 }
 
@@ -113,6 +130,7 @@ export async function confirmPayment(id: string): Promise<void> {
 export async function cancelBooking(id: string): Promise<void> {
   if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
   await updateDoc(doc(db, "carBookings", id), { status: "cancelled" });
+  await removeBookedRange(id);
 }
 
 export async function markKeysHandedOver(id: string): Promise<void> {
@@ -126,6 +144,24 @@ export async function completeBooking(id: string): Promise<void> {
     status: "completed",
     completedAt: serverTimestamp(),
   });
+  await removeBookedRange(id);
+}
+
+export interface BookedRange {
+  start: string;
+  end: string;
+}
+
+/** Public-safe read — only start/end dates, no renter info. Used by the
+ *  self-booking calendar to show taken dates. */
+export async function getBookedRanges(): Promise<BookedRange[]> {
+  if (!firebaseEnabled || !db) return [];
+  try {
+    const snap = await getDocs(collection(db, "bookedRanges"));
+    return snap.docs.map((d) => d.data() as BookedRange);
+  } catch {
+    return [];
+  }
 }
 
 export async function getBookings(): Promise<CarBooking[]> {
