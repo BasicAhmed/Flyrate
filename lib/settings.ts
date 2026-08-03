@@ -40,3 +40,34 @@ export async function setDailyTarget(amount: number) {
   if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
   await setDoc(doc(db, "settings", "dailyTarget"), { amount, updatedAt: serverTimestamp() });
 }
+
+export interface CarRates {
+  day: number;
+  week: number;
+  month: number;
+}
+
+const DEFAULT_CAR_RATES: CarRates = { day: 400, week: 2500, month: 9000 };
+
+/** Reads the Lancer's day/week/month rental rates (ZAR). Falls back to
+ *  sensible defaults if unset. */
+export async function getCarRates(): Promise<CarRates> {
+  if (!firebaseEnabled || !db) return DEFAULT_CAR_RATES;
+  try {
+    const snap = await getDoc(doc(db, "settings", "carRates"));
+    if (!snap.exists()) return DEFAULT_CAR_RATES;
+    const data = snap.data();
+    return {
+      day: typeof data.day === "number" ? data.day : DEFAULT_CAR_RATES.day,
+      week: typeof data.week === "number" ? data.week : DEFAULT_CAR_RATES.week,
+      month: typeof data.month === "number" ? data.month : DEFAULT_CAR_RATES.month,
+    };
+  } catch {
+    return DEFAULT_CAR_RATES;
+  }
+}
+
+export async function setCarRates(rates: CarRates) {
+  if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
+  await setDoc(doc(db, "settings", "carRates"), { ...rates, updatedAt: serverTimestamp() });
+}
