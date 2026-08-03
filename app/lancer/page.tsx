@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -11,22 +11,41 @@ import { auth, firebaseEnabled } from "@/lib/firebase";
 import { getCarRates, setCarRates, type CarRates } from "@/lib/settings";
 import {
   createBooking,
+  markKeysHandedOver,
   completeBooking,
+  computeReturnDate,
   getBookings,
   type CarBooking,
   type RateType,
 } from "@/lib/carBookings";
 
 const RATE_LABELS: Record<RateType, string> = { day: "يوم", week: "أسبوع", month: "شهر" };
+const STATUS_LABELS: Record<CarBooking["status"], string> = {
+  waiting: "بانتظار التسليم",
+  active: "قيد التنفيذ",
+  completed: "مكتمل",
+};
 
 function monthStr(iso: string | null) {
   if (!iso) return "—";
   return iso.slice(0, 7);
 }
 
-function dateStr(iso: string | null) {
+function fmtDateTime(iso: string | null) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function nowLocalInput() {
+  const d = new Date();
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
 }
 
 function shiftMonth(ym: string, delta: number) {
@@ -45,15 +64,19 @@ export default function LancerPage() {
   const [rates, setRates] = useState<CarRates>({ day: 400, week: 2500, month: 9000 });
   const [rateInputs, setRateInputs] = useState({ day: "400", week: "2500", month: "9000" });
   const [savingRates, setSavingRates] = useState(false);
+  const [ratesOpen, setRatesOpen] = useState(false);
 
   const [bookings, setBookings] = useState<CarBooking[]>([]);
   const [renterName, setRenterName] = useState("");
   const [renterPhone, setRenterPhone] = useState("");
+  const [bankUsed, setBankUsed] = useState("");
+  const [collectionAt, setCollectionAt] = useState(nowLocalInput());
   const [rateType, setRateType] = useState<RateType>("day");
   const [quantity, setQuantity] = useState("1");
   const [creating, setCreating] = useState(false);
-  const [completingId, setCompletingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!firebaseEnabled || !auth) {
@@ -133,6 +156,13 @@ export default function LancerPage() {
   }
 
   const activeBooking = bookings.find((b) => b.status === "active");
+  const nextWaiting = bookings
+    .filter((b) => b.status === "waiting")
+    .sort((a, b) => a.collectionAt.localeCompare(b.collectionAt))[0];
+
+  const liveReturnPreview = collectionAt
+    ? computeReturnDate(new Date(collectionAt), rateType, parseFloat(quantity) || 1)
+    : null;
   const liveTotal = (rates[rateType] ?? 0) * (parseFloat(quantity) || 0);
 
   const thisMonth = new Date().toISOString().slice(0, 7);
@@ -161,76 +191,38 @@ export default function LancerPage() {
         </button>
       </div>
 
-      {/* Current status */}
+      {/* Shareable status card */}
       <div
-        className={`mt-6 rounded-2xl border p-5 ${
-          activeBooking ? "border-primary/40 bg-primary/10" : "border-border bg-surface"
+        className={`mt-6 overflow-hidden rounded-3xl border p-8 text-center ${
+          activeBooking
+            ? "border-primary/50 bg-gradient-to-b from-primary/15 to-surface"
+            : nextWaiting
+            ? "border-border bg-gradient-to-b from-surface2 to-surface"
+            : "border-primary/30 bg-gradient-to-b from-primary/10 to-surface"
         }`}
       >
-        {activeBooking ? (
-          <>
-            <p className="text-sm font-semibold text-primary">🚗 السيارة محجوزة حالياً</p>
-            <p className="mt-1 text-sm text-ink" dir="ltr">
-              {activeBooking.renterName} — {activeBooking.renterPhone}
-            </p>
-            <p className="mt-1 text-xs text-subtle">
-              {activeBooking.quantity} {RATE_LABELS[activeBooking.rateType]} · منذ {dateStr(activeBooking.createdAt)}
-            </p>
-          </>
-        ) : (
-          <p className="text-sm font-semibold text-ink">✅ السيارة متاحة الآن</p>
+        <div className="text-5xl">{activeBooking ? "🚘" : "✅"}</div>
+        <p className="mt-3 font-display text-2xl font-bold text-ink">
+          {activeBooking ? "السيارة محجوزة حالياً" : "السيارة متاحة الآن"}
+        </p>
+
+        {activeBooking && (
+          <div className="mt-3 space-y-1 text-sm text-muted" dir="ltr">
+            <p className="text-ink">{activeBooking.renterName}</p>
+            <p>يُتوقع الإرجاع: {fmtDateTime(activeBooking.returnAt)}</p>
+          </div>
         )}
-      </div>
 
-      {/* Rates */}
-      <div className="mt-6 rounded-2xl border border-border bg-surface p-5">
-        <h2 className="font-display text-base font-semibold text-ink">أسعار الإيجار</h2>
-        <div className="mt-4 grid grid-cols-3 gap-3" dir="ltr">
-          {(["day", "week", "month"] as RateType[]).map((rt) => (
-            <label key={rt} className="text-xs text-subtle">
-              {RATE_LABELS[rt]} (R)
-              <input
-                type="number"
-                step="any"
-                value={rateInputs[rt]}
-                onChange={(e) => setRateInputs((prev) => ({ ...prev, [rt]: e.target.value }))}
-                className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
-              />
-            </label>
-          ))}
-        </div>
-        <button
-          onClick={async () => {
-            setSavingRates(true);
-            const next: CarRates = {
-              day: parseFloat(rateInputs.day) || 0,
-              week: parseFloat(rateInputs.week) || 0,
-              month: parseFloat(rateInputs.month) || 0,
-            };
-            await setCarRates(next);
-            setRates(next);
-            setSavingRates(false);
-          }}
-          className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
-        >
-          {savingRates ? "جارٍ الحفظ…" : "حفظ الأسعار"}
-        </button>
-      </div>
+        {!activeBooking && nextWaiting && (
+          <div className="mt-3 space-y-1 text-sm text-muted" dir="ltr">
+            <p>حجز قادم: {nextWaiting.renterName}</p>
+            <p>وقت الاستلام: {fmtDateTime(nextWaiting.collectionAt)}</p>
+          </div>
+        )}
 
-      {/* This month / last month */}
-      <div className="mt-6 grid grid-cols-2 gap-4">
-        <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-subtle">هذا الشهر</p>
-          <p className="mt-1 font-mono text-xl font-bold text-primary" dir="ltr">
-            R{monthTotal(thisMonth).toLocaleString()}
-          </p>
-        </div>
-        <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-subtle">الشهر الماضي</p>
-          <p className="mt-1 font-mono text-xl font-bold text-ink" dir="ltr">
-            R{monthTotal(lastMonth).toLocaleString()}
-          </p>
-        </div>
+        <p className="mt-5 font-display text-xs font-semibold tracking-wide text-primary">
+          FlyRate · Lancer
+        </p>
       </div>
 
       {/* New booking */}
@@ -244,19 +236,40 @@ export default function LancerPage() {
         )}
 
         <div className="mt-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              placeholder="اسم المستأجر"
+              value={renterName}
+              onChange={(e) => setRenterName(e.target.value)}
+              className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-sm text-ink"
+            />
+            <input
+              placeholder="رقم الهاتف"
+              value={renterPhone}
+              onChange={(e) => setRenterPhone(e.target.value)}
+              dir="ltr"
+              className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-sm text-ink"
+            />
+          </div>
+
           <input
-            placeholder="اسم المستأجر"
-            value={renterName}
-            onChange={(e) => setRenterName(e.target.value)}
+            placeholder="البنك المستخدم"
+            value={bankUsed}
+            onChange={(e) => setBankUsed(e.target.value)}
             className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-sm text-ink"
           />
-          <input
-            placeholder="رقم الهاتف"
-            value={renterPhone}
-            onChange={(e) => setRenterPhone(e.target.value)}
-            dir="ltr"
-            className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-sm text-ink"
-          />
+
+          <label className="block text-xs text-subtle">
+            وقت الحجز (الاستلام)
+            <input
+              type="datetime-local"
+              value={collectionAt}
+              onChange={(e) => setCollectionAt(e.target.value)}
+              dir="ltr"
+              className="mt-1 w-full rounded-lg border border-border bg-surface2 px-3.5 py-2.5 text-sm text-ink"
+            />
+          </label>
+
           <div className="grid grid-cols-2 gap-3" dir="ltr">
             <label className="text-xs text-subtle">
               المدة
@@ -282,9 +295,15 @@ export default function LancerPage() {
             </label>
           </div>
 
-          <div className="flex items-center justify-between rounded-xl bg-surface2 p-4 font-mono text-sm" dir="ltr">
-            <span className="text-subtle">الإجمالي</span>
-            <span className="font-semibold text-primary">R{liveTotal.toLocaleString()}</span>
+          <div className="space-y-2 rounded-xl bg-surface2 p-4 font-mono text-sm" dir="ltr">
+            <div className="flex items-center justify-between">
+              <span className="text-subtle">تاريخ الإرجاع المتوقع</span>
+              <span className="text-ink">{liveReturnPreview ? fmtDateTime(liveReturnPreview.toISOString()) : "—"}</span>
+            </div>
+            <div className="flex items-center justify-between border-t border-border pt-2">
+              <span className="text-subtle">الإجمالي</span>
+              <span className="font-semibold text-primary">R{liveTotal.toLocaleString()}</span>
+            </div>
           </div>
 
           <button
@@ -299,13 +318,17 @@ export default function LancerPage() {
                 await createBooking({
                   renterName: renterName.trim(),
                   renterPhone: renterPhone.trim(),
+                  bankUsed: bankUsed.trim(),
                   rateType,
                   quantity: parseFloat(quantity) || 1,
                   rate: rates[rateType],
+                  collectionAt: new Date(collectionAt).toISOString(),
                 });
                 setRenterName("");
                 setRenterPhone("");
+                setBankUsed("");
                 setQuantity("1");
+                setCollectionAt(nowLocalInput());
                 setBookings(await getBookings());
               } catch (err) {
                 setFormError(err instanceof Error ? err.message : String(err));
@@ -314,9 +337,70 @@ export default function LancerPage() {
             }}
             className="w-full rounded-full bg-primary py-3.5 text-sm font-semibold text-bg"
           >
-            {creating ? "جارٍ الحفظ…" : "تأكيد الحجز (تم استلام الدفع)"}
+            {creating ? "جارٍ الحفظ…" : "تأكيد الحجز"}
           </button>
         </div>
+      </div>
+
+      {/* This month / last month */}
+      <div className="mt-6 grid grid-cols-2 gap-4">
+        <div className="rounded-xl border border-border bg-surface p-4">
+          <p className="text-xs text-subtle">هذا الشهر</p>
+          <p className="mt-1 font-mono text-xl font-bold text-primary" dir="ltr">
+            R{monthTotal(thisMonth).toLocaleString()}
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-surface p-4">
+          <p className="text-xs text-subtle">الشهر الماضي</p>
+          <p className="mt-1 font-mono text-xl font-bold text-ink" dir="ltr">
+            R{monthTotal(lastMonth).toLocaleString()}
+          </p>
+        </div>
+      </div>
+
+      {/* Rates (collapsed by default, tucked away) */}
+      <div className="mt-6 rounded-2xl border border-border bg-surface p-5">
+        <button
+          onClick={() => setRatesOpen((v) => !v)}
+          className="flex w-full items-center justify-between text-sm font-semibold text-ink"
+        >
+          أسعار الإيجار
+          <span className="text-xs text-subtle">{ratesOpen ? "إخفاء" : "تعديل"}</span>
+        </button>
+        {ratesOpen && (
+          <>
+            <div className="mt-4 grid grid-cols-3 gap-3" dir="ltr">
+              {(["day", "week", "month"] as RateType[]).map((rt) => (
+                <label key={rt} className="text-xs text-subtle">
+                  {RATE_LABELS[rt]} (R)
+                  <input
+                    type="number"
+                    step="any"
+                    value={rateInputs[rt]}
+                    onChange={(e) => setRateInputs((prev) => ({ ...prev, [rt]: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                  />
+                </label>
+              ))}
+            </div>
+            <button
+              onClick={async () => {
+                setSavingRates(true);
+                const next: CarRates = {
+                  day: parseFloat(rateInputs.day) || 0,
+                  week: parseFloat(rateInputs.week) || 0,
+                  month: parseFloat(rateInputs.month) || 0,
+                };
+                await setCarRates(next);
+                setRates(next);
+                setSavingRates(false);
+              }}
+              className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
+            >
+              {savingRates ? "جارٍ الحفظ…" : "حفظ الأسعار"}
+            </button>
+          </>
+        )}
       </div>
 
       {/* Monthly history */}
@@ -346,45 +430,117 @@ export default function LancerPage() {
         </div>
       )}
 
-      {/* Bookings list */}
+      {/* Bookings table */}
       {bookings.length > 0 && (
         <div className="mt-6">
-          <h3 className="text-sm font-semibold text-ink">كل الحجوزات</h3>
-          <div className="mt-2 space-y-2">
-            {bookings.map((b) => (
-              <div key={b.id} className="rounded-xl border border-border bg-surface p-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-ink" dir="ltr">
-                    {b.renterName} — {b.renterPhone}
-                  </div>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      b.status === "active" ? "bg-primary/20 text-primary" : "bg-surface2 text-muted"
-                    }`}
-                  >
-                    {b.status === "active" ? "نشط" : "منتهي"}
-                  </span>
-                </div>
-                <div className="mt-1.5 flex items-center justify-between text-xs text-subtle" dir="ltr">
-                  <span>
-                    {b.quantity} {RATE_LABELS[b.rateType]} · R{b.total.toLocaleString()} · {dateStr(b.createdAt)}
-                  </span>
-                  {b.status === "active" && (
-                    <button
-                      onClick={async () => {
-                        setCompletingId(b.id);
-                        await completeBooking(b.id);
-                        setBookings(await getBookings());
-                        setCompletingId(null);
-                      }}
-                      className="rounded-full bg-primary/90 px-3 py-1.5 text-xs font-semibold text-bg"
-                    >
-                      {completingId === b.id ? "…" : "إنهاء (استلام السيارة)"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+          <h3 className="text-sm font-semibold text-ink">الحجوزات السابقة</h3>
+          <p className="mt-1 text-xs text-subtle">اضغط على أي حجز لعرض التفاصيل الكاملة.</p>
+          <div className="mt-2 overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[560px] border-collapse text-right text-sm">
+              <thead>
+                <tr className="border-b border-border bg-surface2 text-xs text-subtle">
+                  <th className="px-4 py-2.5 font-medium">الاسم</th>
+                  <th className="px-4 py-2.5 font-medium">الرقم</th>
+                  <th className="px-4 py-2.5 font-medium">المبلغ</th>
+                  <th className="px-4 py-2.5 font-medium">الاستلام</th>
+                  <th className="px-4 py-2.5 font-medium">الإرجاع</th>
+                  <th className="px-4 py-2.5 font-medium">الحالة</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bookings.map((b) => {
+                  const isOpen = openId === b.id;
+                  return (
+                    <Fragment key={b.id}>
+                      <tr
+                        onClick={() => setOpenId(isOpen ? null : b.id)}
+                        className="cursor-pointer border-b border-border/50 hover:bg-surface2"
+                      >
+                        <td className="px-4 py-2.5 text-ink">{b.renterName}</td>
+                        <td className="px-4 py-2.5 text-muted" dir="ltr">{b.renterPhone}</td>
+                        <td className="px-4 py-2.5 font-mono text-primary" dir="ltr">R{b.total.toLocaleString()}</td>
+                        <td className="px-4 py-2.5 text-subtle text-xs" dir="ltr">{fmtDateTime(b.collectionAt)}</td>
+                        <td className="px-4 py-2.5 text-subtle text-xs" dir="ltr">{fmtDateTime(b.returnAt)}</td>
+                        <td className="px-4 py-2.5">
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              b.status === "active"
+                                ? "bg-primary/20 text-primary"
+                                : b.status === "waiting"
+                                ? "bg-surface2 text-muted border border-border"
+                                : "bg-surface2 text-subtle"
+                            }`}
+                          >
+                            {STATUS_LABELS[b.status]}
+                          </span>
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr className="border-b border-border/50 bg-surface2">
+                          <td colSpan={6} className="px-4 py-4">
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
+                              <div>
+                                <span className="text-subtle">البنك المستخدم: </span>
+                                <span className="text-ink">{b.bankUsed || "—"}</span>
+                              </div>
+                              <div dir="ltr">
+                                <span className="text-subtle">المدة: </span>
+                                <span className="text-ink">{b.quantity} {RATE_LABELS[b.rateType]}</span>
+                              </div>
+                              <div dir="ltr">
+                                <span className="text-subtle">السعر: </span>
+                                <span className="text-ink">R{b.rate.toLocaleString()}</span>
+                              </div>
+                              <div dir="ltr">
+                                <span className="text-subtle">تاريخ الحجز: </span>
+                                <span className="text-ink">{fmtDateTime(b.createdAt)}</span>
+                              </div>
+                              {b.completedAt && (
+                                <div dir="ltr">
+                                  <span className="text-subtle">تاريخ الإرجاع الفعلي: </span>
+                                  <span className="text-ink">{fmtDateTime(b.completedAt)}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="mt-3 flex gap-2">
+                              {b.status === "waiting" && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setBusyId(b.id);
+                                    await markKeysHandedOver(b.id);
+                                    setBookings(await getBookings());
+                                    setBusyId(null);
+                                  }}
+                                  className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
+                                >
+                                  {busyId === b.id ? "…" : "تسليم المفاتيح"}
+                                </button>
+                              )}
+                              {b.status === "active" && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setBusyId(b.id);
+                                    await completeBooking(b.id);
+                                    setBookings(await getBookings());
+                                    setBusyId(null);
+                                  }}
+                                  className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
+                                >
+                                  {busyId === b.id ? "…" : "استلام السيارة"}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
