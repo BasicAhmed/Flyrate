@@ -16,6 +16,7 @@ import {
   markKeysHandedOver,
   completeBooking,
   computeReturnDate,
+  computeTotal,
   getBookings,
   type CarBooking,
   type RateType,
@@ -65,8 +66,8 @@ export default function LancerPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const [rates, setRates] = useState<CarRates>({ day: 400, week: 2500, month: 9000 });
-  const [rateInputs, setRateInputs] = useState({ day: "400", week: "2500", month: "9000" });
+  const [rates, setRates] = useState<CarRates>({ day: 400, weekendDay: 500, week: 2500, month: 9000 });
+  const [rateInputs, setRateInputs] = useState({ day: "400", weekendDay: "500", week: "2500", month: "9000" });
   const [savingRates, setSavingRates] = useState(false);
   const [ratesOpen, setRatesOpen] = useState(false);
 
@@ -101,7 +102,7 @@ export default function LancerPage() {
     if (!user) return;
     getCarRates().then((r) => {
       setRates(r);
-      setRateInputs({ day: String(r.day), week: String(r.week), month: String(r.month) });
+      setRateInputs({ day: String(r.day), weekendDay: String(r.weekendDay), week: String(r.week), month: String(r.month) });
     });
     getBookings().then(setBookings);
     getBankAccounts().then(setAccounts);
@@ -172,7 +173,9 @@ export default function LancerPage() {
   const liveReturnPreview = collectionAt
     ? computeReturnDate(new Date(collectionAt), rateType, parseFloat(quantity) || 1)
     : null;
-  const liveTotal = (rates[rateType] ?? 0) * (parseFloat(quantity) || 0);
+  const liveTotal = collectionAt
+    ? computeTotal(rates, rateType, parseFloat(quantity) || 0, new Date(collectionAt))
+    : 0;
 
   const thisMonth = new Date().toISOString().slice(0, 7);
   const lastMonth = shiftMonth(thisMonth, -1);
@@ -333,7 +336,7 @@ export default function LancerPage() {
                   bankUsed: bankUsed.trim(),
                   rateType,
                   quantity: parseFloat(quantity) || 1,
-                  rate: rates[rateType],
+                  rates,
                   collectionAt: new Date(collectionAt).toISOString(),
                 });
                 setRenterName("");
@@ -381,25 +384,54 @@ export default function LancerPage() {
         </button>
         {ratesOpen && (
           <>
-            <div className="mt-4 grid grid-cols-3 gap-3" dir="ltr">
-              {(["day", "week", "month"] as RateType[]).map((rt) => (
-                <label key={rt} className="text-xs text-subtle">
-                  {RATE_LABELS[rt]} (R)
-                  <input
-                    type="number"
-                    step="any"
-                    value={rateInputs[rt]}
-                    onChange={(e) => setRateInputs((prev) => ({ ...prev, [rt]: e.target.value }))}
-                    className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
-                  />
-                </label>
-              ))}
+            <div className="mt-4 grid grid-cols-2 gap-3" dir="ltr">
+              <label className="text-xs text-subtle">
+                {RATE_LABELS.day} - أيام الأسبوع (R)
+                <input
+                  type="number"
+                  step="any"
+                  value={rateInputs.day}
+                  onChange={(e) => setRateInputs((prev) => ({ ...prev, day: e.target.value }))}
+                  className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                />
+              </label>
+              <label className="text-xs text-subtle">
+                يوم - السبت والأحد (R)
+                <input
+                  type="number"
+                  step="any"
+                  value={rateInputs.weekendDay}
+                  onChange={(e) => setRateInputs((prev) => ({ ...prev, weekendDay: e.target.value }))}
+                  className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                />
+              </label>
+              <label className="text-xs text-subtle">
+                {RATE_LABELS.week} (R)
+                <input
+                  type="number"
+                  step="any"
+                  value={rateInputs.week}
+                  onChange={(e) => setRateInputs((prev) => ({ ...prev, week: e.target.value }))}
+                  className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                />
+              </label>
+              <label className="text-xs text-subtle">
+                {RATE_LABELS.month} (R)
+                <input
+                  type="number"
+                  step="any"
+                  value={rateInputs.month}
+                  onChange={(e) => setRateInputs((prev) => ({ ...prev, month: e.target.value }))}
+                  className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                />
+              </label>
             </div>
             <button
               onClick={async () => {
                 setSavingRates(true);
                 const next: CarRates = {
                   day: parseFloat(rateInputs.day) || 0,
+                  weekendDay: parseFloat(rateInputs.weekendDay) || 0,
                   week: parseFloat(rateInputs.week) || 0,
                   month: parseFloat(rateInputs.month) || 0,
                 };

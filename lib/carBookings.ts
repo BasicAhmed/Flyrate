@@ -11,6 +11,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db, firebaseEnabled } from "./firebase";
+import type { CarRates } from "./settings";
 
 export type RateType = "day" | "week" | "month";
 
@@ -29,7 +30,7 @@ export interface CarBooking {
   bankUsed: string;
   rateType: RateType;
   quantity: number;
-  rate: number;
+  rate: number; // base rate used for reference (day-type totals may vary by weekend)
   total: number;
   collectionAt: string; // ISO datetime — planned pickup/handover time
   returnAt: string; // ISO datetime — computed from collectionAt + duration
@@ -45,6 +46,21 @@ export function computeReturnDate(collectionAt: Date, rateType: RateType, quanti
   else if (rateType === "week") d.setDate(d.getDate() + quantity * 7);
   else if (rateType === "month") d.setMonth(d.getMonth() + quantity);
   return d;
+}
+
+/** Computes the total, applying the weekend rate to Friday/Saturday nights
+ *  for day-based bookings. Week/month bookings use their flat rate — the
+ *  weekend rate only makes sense at daily granularity. */
+export function computeTotal(rates: CarRates, rateType: RateType, quantity: number, collectionAt: Date): number {
+  if (rateType !== "day") return rates[rateType] * quantity;
+  let total = 0;
+  const d = new Date(collectionAt);
+  for (let i = 0; i < quantity; i++) {
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6; // Sat/Sun
+    total += isWeekend ? rates.weekendDay : rates.day;
+    d.setDate(d.getDate() + 1);
+  }
+  return total;
 }
 
 function genBookingNumber(): string {
@@ -72,14 +88,21 @@ export async function createBooking(input: {
   bankUsed: string;
   rateType: RateType;
   quantity: number;
-  rate: number;
+  rates: CarRates;
   collectionAt: string;
 }): Promise<void> {
   if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
-  const total = input.rate * input.quantity;
-  const returnAt = computeReturnDate(new Date(input.collectionAt), input.rateType, input.quantity).toISOString();
+  const collectionDate = new Date(input.collectionAt);
+  const total = computeTotal(input.rates, input.rateType, input.quantity, collectionDate);
+  const returnAt = computeReturnDate(collectionDate, input.rateType, input.quantity).toISOString();
   const ref = await addDoc(collection(db, "carBookings"), {
-    ...input,
+    renterName: input.renterName,
+    renterPhone: input.renterPhone,
+    bankUsed: input.bankUsed,
+    rateType: input.rateType,
+    quantity: input.quantity,
+    rate: input.rates[input.rateType],
+    collectionAt: input.collectionAt,
     total,
     returnAt,
     bookingNumber: genBookingNumber(),
@@ -99,16 +122,23 @@ export async function createPublicBooking(input: {
   bankUsed: string;
   rateType: RateType;
   quantity: number;
-  rate: number;
+  rates: CarRates;
   collectionAt: string;
 }): Promise<string> {
   if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
-  const total = input.rate * input.quantity;
-  const returnAt = computeReturnDate(new Date(input.collectionAt), input.rateType, input.quantity).toISOString();
+  const collectionDate = new Date(input.collectionAt);
+  const total = computeTotal(input.rates, input.rateType, input.quantity, collectionDate);
+  const returnAt = computeReturnDate(collectionDate, input.rateType, input.quantity).toISOString();
   const bookingNumber = genBookingNumber();
   const paymentDeadline = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
   const ref = await addDoc(collection(db, "carBookings"), {
-    ...input,
+    renterName: input.renterName,
+    renterPhone: input.renterPhone,
+    bankUsed: input.bankUsed,
+    rateType: input.rateType,
+    quantity: input.quantity,
+    rate: input.rates[input.rateType],
+    collectionAt: input.collectionAt,
     total,
     returnAt,
     bookingNumber,

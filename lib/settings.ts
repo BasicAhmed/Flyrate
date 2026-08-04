@@ -43,14 +43,15 @@ export async function setDailyTarget(amount: number) {
 
 export interface CarRates {
   day: number;
+  weekendDay: number;
   week: number;
   month: number;
 }
 
-const DEFAULT_CAR_RATES: CarRates = { day: 400, week: 2500, month: 9000 };
+const DEFAULT_CAR_RATES: CarRates = { day: 400, weekendDay: 500, week: 2500, month: 9000 };
 
-/** Reads the Lancer's day/week/month rental rates (ZAR). Falls back to
- *  sensible defaults if unset. */
+/** Reads the Lancer's rental rates (ZAR). Falls back to sensible defaults
+ *  if unset. */
 export async function getCarRates(): Promise<CarRates> {
   if (!firebaseEnabled || !db) return DEFAULT_CAR_RATES;
   try {
@@ -59,6 +60,7 @@ export async function getCarRates(): Promise<CarRates> {
     const data = snap.data();
     return {
       day: typeof data.day === "number" ? data.day : DEFAULT_CAR_RATES.day,
+      weekendDay: typeof data.weekendDay === "number" ? data.weekendDay : DEFAULT_CAR_RATES.weekendDay,
       week: typeof data.week === "number" ? data.week : DEFAULT_CAR_RATES.week,
       month: typeof data.month === "number" ? data.month : DEFAULT_CAR_RATES.month,
     };

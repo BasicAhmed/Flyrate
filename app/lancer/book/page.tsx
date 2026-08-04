@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MessageCircle } from "lucide-react";
 import { getCarRates, getBankAccounts, type CarRates, type BankAccount } from "@/lib/settings";
-import { createPublicBooking, computeReturnDate, getBookedRanges, type RateType } from "@/lib/carBookings";
+import { createPublicBooking, computeReturnDate, computeTotal, getBookedRanges, type RateType } from "@/lib/carBookings";
 import { whatsappLink } from "@/lib/whatsapp";
 import BookingCalendar from "./Calendar";
 
@@ -60,14 +60,17 @@ export default function PublicBookingPage() {
       setAccounts(a);
       setAccountId(a[0]?.id ?? "");
       const dates = new Set<string>();
-      ranges.forEach((rg) => expandRange(rg.start, rg.end).forEach((d) => dates.add(d)));
+      ranges.forEach((rg) => {
+        const days = expandRange(rg.start, rg.end);
+        days.slice(0, -1).forEach((d) => dates.add(d)); // return day itself isn't blocked
+      });
       setBookedDates(dates);
       setLoading(false);
     });
   }, []);
 
   const collectionAt = selectedDate ? `${selectedDate}T${time}` : null;
-  const liveTotal = rates ? (rates[rateType] ?? 0) * (parseFloat(quantity) || 0) : 0;
+  const liveTotal = rates && collectionAt ? computeTotal(rates, rateType, parseFloat(quantity) || 0, new Date(collectionAt)) : 0;
   const liveReturn = collectionAt ? computeReturnDate(new Date(collectionAt), rateType, parseFloat(quantity) || 1) : null;
   const selectedAccount = accounts.find((a) => a.id === accountId);
 
@@ -206,6 +209,9 @@ export default function PublicBookingPage() {
               />
             </label>
           </div>
+          {rateType === "day" && (
+            <p className="text-xs text-subtle">* أيام السبت والأحد بسعر مختلف (R{rates?.weekendDay.toLocaleString()}/يوم).</p>
+          )}
 
           {accounts.length > 0 && (
             <label className="block text-xs text-subtle">
@@ -266,7 +272,7 @@ export default function PublicBookingPage() {
                   bankUsed: selectedAccount.bankName,
                   rateType,
                   quantity: parseFloat(quantity) || 1,
-                  rate: rates![rateType],
+                  rates: rates!,
                   collectionAt: new Date(collectionAt!).toISOString(),
                 });
                 setResult({ bookingNumber, total: liveTotal, account: selectedAccount });
