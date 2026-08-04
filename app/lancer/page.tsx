@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, Fragment } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -207,8 +208,11 @@ export default function LancerPage() {
       </a>
 
       {/* Shareable status card */}
-      <div
-        className={`mt-6 overflow-hidden rounded-3xl border p-8 text-center ${
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.45, ease: "easeOut" }}
+        className={`relative mt-6 overflow-hidden rounded-3xl border p-8 text-center ${
           activeBooking
             ? "border-primary/50 bg-gradient-to-b from-primary/15 to-surface"
             : nextWaiting
@@ -216,7 +220,25 @@ export default function LancerPage() {
             : "border-primary/30 bg-gradient-to-b from-primary/10 to-surface"
         }`}
       >
-        <div className="text-5xl">{activeBooking ? "🚘" : "✅"}</div>
+        {activeBooking && (
+          <span className="absolute right-5 top-5 flex h-2.5 w-2.5">
+            <motion.span
+              animate={{ scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }}
+              transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute inline-flex h-full w-full rounded-full bg-primary"
+            />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+          </span>
+        )}
+        <motion.div
+          key={activeBooking ? "out" : "in"}
+          initial={{ scale: 0.6, rotate: -15, opacity: 0 }}
+          animate={{ scale: 1, rotate: 0, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 260, damping: 16 }}
+          className="text-5xl"
+        >
+          {activeBooking ? "🚘" : "✅"}
+        </motion.div>
         <p className="mt-3 font-display text-2xl font-bold text-ink">
           {activeBooking ? "السيارة محجوزة حالياً" : "السيارة متاحة الآن"}
         </p>
@@ -238,17 +260,29 @@ export default function LancerPage() {
         <p className="mt-5 font-display text-xs font-semibold tracking-wide text-primary">
           FlyRate · Lancer
         </p>
-      </div>
+      </motion.div>
 
       {/* New booking */}
-      <div className="mt-6 rounded-2xl border border-border bg-surface p-5">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.08 }}
+        className="mt-6 rounded-2xl border border-border bg-surface p-5"
+      >
         <h2 className="font-display text-base font-semibold text-ink">حجز جديد</h2>
 
-        {formError && (
-          <div className="mt-3 rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm text-primary">
-            {formError}
-          </div>
-        )}
+        <AnimatePresence>
+          {formError && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, marginTop: 0 }}
+              animate={{ opacity: 1, height: "auto", marginTop: 12 }}
+              exit={{ opacity: 0, height: 0, marginTop: 0 }}
+              className="overflow-hidden rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm text-primary"
+            >
+              {formError}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="mt-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -317,11 +351,24 @@ export default function LancerPage() {
             </div>
             <div className="flex items-center justify-between border-t border-border pt-2">
               <span className="text-subtle">الإجمالي</span>
-              <span className="font-semibold text-primary">R{liveTotal.toLocaleString()}</span>
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={liveTotal}
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.15 }}
+                  className="font-semibold text-primary"
+                >
+                  R{liveTotal.toLocaleString()}
+                </motion.span>
+              </AnimatePresence>
             </div>
           </div>
 
-          <button
+          <motion.button
+            whileHover={{ scale: 1.015 }}
+            whileTap={{ scale: 0.98 }}
             onClick={async () => {
               setFormError(null);
               if (!renterName.trim() || !renterPhone.trim()) {
@@ -353,9 +400,9 @@ export default function LancerPage() {
             className="w-full rounded-full bg-primary py-3.5 text-sm font-semibold text-bg"
           >
             {creating ? "جارٍ الحفظ…" : "تأكيد الحجز"}
-          </button>
+          </motion.button>
         </div>
-      </div>
+      </motion.div>
 
       {/* This month / last month */}
       <div className="mt-6 grid grid-cols-2 gap-4">
@@ -380,10 +427,22 @@ export default function LancerPage() {
           className="flex w-full items-center justify-between text-sm font-semibold text-ink"
         >
           أسعار الإيجار
-          <span className="text-xs text-subtle">{ratesOpen ? "إخفاء" : "تعديل"}</span>
+          <motion.span
+            animate={{ rotate: ratesOpen ? 180 : 0 }}
+            className="text-xs text-subtle"
+          >
+            {ratesOpen ? "إخفاء ▲" : "تعديل ▼"}
+          </motion.span>
         </button>
-        {ratesOpen && (
-          <>
+        <AnimatePresence initial={false}>
+          {ratesOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
+              className="overflow-hidden"
+            >
             <div className="mt-4 grid grid-cols-2 gap-3" dir="ltr">
               <label className="text-xs text-subtle">
                 {RATE_LABELS.day} - أيام الأسبوع (R)
@@ -443,8 +502,9 @@ export default function LancerPage() {
             >
               {savingRates ? "جارٍ الحفظ…" : "حفظ الأسعار"}
             </button>
-          </>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Bank accounts (collapsed by default) */}
@@ -454,10 +514,22 @@ export default function LancerPage() {
           className="flex w-full items-center justify-between text-sm font-semibold text-ink"
         >
           حسابات الدفع (تظهر للعملاء)
-          <span className="text-xs text-subtle">{accountsOpen ? "إخفاء" : "تعديل"}</span>
+          <motion.span
+            animate={{ rotate: accountsOpen ? 180 : 0 }}
+            className="text-xs text-subtle"
+          >
+            {accountsOpen ? "إخفاء ▲" : "تعديل ▼"}
+          </motion.span>
         </button>
-        {accountsOpen && (
-          <>
+        <AnimatePresence initial={false}>
+          {accountsOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
+              className="overflow-hidden"
+            >
             <div className="mt-4 space-y-3">
               {accounts.map((acc, i) => (
                 <div key={acc.id} className="rounded-xl border border-border bg-surface2 p-3">
@@ -512,8 +584,9 @@ export default function LancerPage() {
             >
               {savingAccounts ? "جارٍ الحفظ…" : "حفظ الحسابات"}
             </button>
-          </>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
       {monthlyTotals.length > 0 && (
         <div className="mt-6">
@@ -559,11 +632,15 @@ export default function LancerPage() {
                 </tr>
               </thead>
               <tbody>
-                {bookings.map((b) => {
+                {bookings.map((b, i) => {
                   const isOpen = openId === b.id;
                   return (
                     <Fragment key={b.id}>
-                      <tr
+                      <motion.tr
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.25, delay: Math.min(i * 0.03, 0.3) }}
+                        whileTap={{ scale: 0.995 }}
                         onClick={() => setOpenId(isOpen ? null : b.id)}
                         className="cursor-pointer border-b border-border/50 hover:bg-surface2"
                       >
@@ -589,11 +666,22 @@ export default function LancerPage() {
                             {STATUS_LABELS[b.status]}
                           </span>
                         </td>
-                      </tr>
+                      </motion.tr>
+                      <AnimatePresence>
                       {isOpen && (
-                        <tr className="border-b border-border/50 bg-surface2">
+                        <motion.tr
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="border-b border-border/50 bg-surface2"
+                        >
                           <td colSpan={6} className="px-4 py-4">
-                            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
+                            <motion.div
+                              initial={{ opacity: 0, y: -6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: 0.05 }}
+                              className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-3"
+                            >
                               <div dir="ltr">
                                 <span className="text-subtle">رقم الحجز: </span>
                                 <span className="font-mono text-ink">{b.bookingNumber}</span>
@@ -626,12 +714,13 @@ export default function LancerPage() {
                                   <span className="text-ink">{fmtDateTime(b.completedAt)}</span>
                                 </div>
                               )}
-                            </div>
+                            </motion.div>
 
                             <div className="mt-3 flex gap-2">
                               {b.status === "awaiting_payment" && (
                                 <>
-                                  <button
+                                  <motion.button
+                                    whileTap={{ scale: 0.95 }}
                                     onClick={async (e) => {
                                       e.stopPropagation();
                                       setBusyId(b.id);
@@ -642,8 +731,9 @@ export default function LancerPage() {
                                     className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
                                   >
                                     {busyId === b.id ? "…" : "تأكيد الدفع"}
-                                  </button>
-                                  <button
+                                  </motion.button>
+                                  <motion.button
+                                    whileTap={{ scale: 0.95 }}
                                     onClick={async (e) => {
                                       e.stopPropagation();
                                       setBusyId(b.id);
@@ -654,11 +744,12 @@ export default function LancerPage() {
                                     className="rounded-full border border-border px-4 py-2 text-xs font-semibold text-muted"
                                   >
                                     إلغاء
-                                  </button>
+                                  </motion.button>
                                 </>
                               )}
                               {b.status === "waiting" && (
-                                <button
+                                <motion.button
+                                  whileTap={{ scale: 0.95 }}
                                   onClick={async (e) => {
                                     e.stopPropagation();
                                     setBusyId(b.id);
@@ -669,10 +760,11 @@ export default function LancerPage() {
                                   className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
                                 >
                                   {busyId === b.id ? "…" : "تسليم المفاتيح"}
-                                </button>
+                                </motion.button>
                               )}
                               {b.status === "active" && (
-                                <button
+                                <motion.button
+                                  whileTap={{ scale: 0.95 }}
                                   onClick={async (e) => {
                                     e.stopPropagation();
                                     setBusyId(b.id);
@@ -683,12 +775,13 @@ export default function LancerPage() {
                                   className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
                                 >
                                   {busyId === b.id ? "…" : "استلام السيارة"}
-                                </button>
+                                </motion.button>
                               )}
                             </div>
                           </td>
-                        </tr>
+                        </motion.tr>
                       )}
+                      </AnimatePresence>
                     </Fragment>
                   );
                 })}

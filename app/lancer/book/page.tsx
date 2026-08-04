@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { MessageCircle } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { MessageCircle, CheckCircle2 } from "lucide-react";
 import { getCarRates, getBankAccounts, type CarRates, type BankAccount } from "@/lib/settings";
 import { createPublicBooking, computeReturnDate, computeTotal, getBookedRanges, type RateType } from "@/lib/carBookings";
 import { whatsappLink } from "@/lib/whatsapp";
@@ -36,6 +37,11 @@ function expandRange(startStr: string, endStr: string): string[] {
   return out;
 }
 
+const fadeUp = {
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+};
+
 export default function PublicBookingPage() {
   const [rates, setRates] = useState<CarRates | null>(null);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
@@ -62,7 +68,7 @@ export default function PublicBookingPage() {
       const dates = new Set<string>();
       ranges.forEach((rg) => {
         const days = expandRange(rg.start, rg.end);
-        days.slice(0, -1).forEach((d) => dates.add(d)); // return day itself isn't blocked
+        days.slice(0, -1).forEach((d) => dates.add(d));
       });
       setBookedDates(dates);
       setLoading(false);
@@ -87,7 +93,14 @@ export default function PublicBookingPage() {
   }, [projectedDates, bookedDates, selectedDate]);
 
   if (loading) {
-    return <div className="mx-auto max-w-lg px-6 py-24 text-center text-muted">جارِ التحميل…</div>;
+    return (
+      <div className="mx-auto max-w-lg px-6 py-16">
+        <div className="h-6 w-40 animate-pulse rounded bg-surface2" />
+        <div className="mt-2 h-4 w-64 animate-pulse rounded bg-surface2" />
+        <div className="mt-5 h-72 animate-pulse rounded-2xl bg-surface2" />
+        <div className="mt-4 h-64 animate-pulse rounded-2xl bg-surface2" />
+      </div>
+    );
   }
 
   if (result) {
@@ -99,15 +112,45 @@ export default function PublicBookingPage() {
 
     return (
       <div className="mx-auto max-w-lg px-6 py-16">
-        <div className="rounded-3xl border border-primary/40 bg-primary/10 p-6 text-center">
-          <p className="text-4xl">✅</p>
-          <p className="mt-3 font-display text-xl font-bold text-ink">تم استلام حجزك</p>
-          <p className="mt-1 font-mono text-lg font-semibold text-primary" dir="ltr">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          className="rounded-3xl border border-primary/40 bg-primary/10 p-6 text-center"
+        >
+          <motion.div
+            initial={{ scale: 0, rotate: -20 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 260, damping: 14, delay: 0.1 }}
+            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/20 text-primary"
+          >
+            <CheckCircle2 size={32} />
+          </motion.div>
+          <motion.p
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="mt-3 font-display text-xl font-bold text-ink"
+          >
+            تم استلام حجزك
+          </motion.p>
+          <motion.p
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.28 }}
+            className="mt-1 font-mono text-lg font-semibold text-primary"
+            dir="ltr"
+          >
             {result.bookingNumber}
-          </p>
-        </div>
+          </motion.p>
+        </motion.div>
 
-        <div className="mt-5 rounded-2xl border border-border bg-surface p-5">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35, duration: 0.4 }}
+          className="mt-5 rounded-2xl border border-border bg-surface p-5"
+        >
           <h2 className="font-display text-base font-semibold text-ink">خطوات إتمام الحجز</h2>
           <ol className="mt-3 space-y-2 text-sm text-muted">
             <li>1. حوّل مبلغ <span className="font-semibold text-ink">R{result.total.toLocaleString()}</span> إلى الحساب التالي:</li>
@@ -121,58 +164,84 @@ export default function PublicBookingPage() {
             <li>3. يجب إتمام الدفع خلال <span className="font-semibold text-primary">3 ساعات</span> من الآن، وإلا يُلغى الحجز تلقائياً.</li>
           </ol>
 
-          <a
+          <motion.a
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
             href={whatsappLink(message)}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3.5 text-sm font-semibold text-bg"
           >
             <MessageCircle size={16} /> إرسال إثبات الدفع عبر واتساب
-          </a>
-        </div>
+          </motion.a>
+        </motion.div>
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-lg px-6 py-16">
-      <h1 className="font-display text-xl font-semibold text-ink">احجز لانسر</h1>
-      <p className="mt-1 text-sm text-muted">اختر تاريخ الاستلام من التقويم، واملأ الباقي.</p>
+      <motion.div initial="initial" animate="animate" variants={fadeUp} transition={{ duration: 0.4 }}>
+        <h1 className="font-display text-xl font-semibold text-ink">احجز لانسر</h1>
+        <p className="mt-1 text-sm text-muted">اختر تاريخ الاستلام من التقويم، واملأ الباقي.</p>
+      </motion.div>
 
-      {formError && (
-        <div className="mt-4 rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm text-primary">
-          {formError}
-        </div>
-      )}
+      <AnimatePresence>
+        {formError && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, marginTop: 0 }}
+            animate={{ opacity: 1, height: "auto", marginTop: 16 }}
+            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+            className="overflow-hidden rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm text-primary"
+          >
+            {formError}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="mt-5 space-y-4">
-        <BookingCalendar
-          bookedDates={bookedDates}
-          projectedDates={projectedDates}
-          selected={selectedDate}
-          onSelect={setSelectedDate}
-        />
+        <motion.div initial="initial" animate="animate" variants={fadeUp} transition={{ duration: 0.45, delay: 0.05 }}>
+          <BookingCalendar
+            bookedDates={bookedDates}
+            projectedDates={projectedDates}
+            selected={selectedDate}
+            onSelect={setSelectedDate}
+          />
+        </motion.div>
 
-        {hasConflict && (
-          <div className="rounded-lg border border-primary/40 bg-primary/10 p-3 text-xs text-primary">
-            المدة المختارة تتداخل مع حجز آخر — جرّب تاريخاً مختلفاً أو مدة أقصر.
-          </div>
-        )}
+        <AnimatePresence>
+          {hasConflict && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden rounded-lg border border-primary/40 bg-primary/10 p-3 text-xs text-primary"
+            >
+              المدة المختارة تتداخل مع حجز آخر — جرّب تاريخاً مختلفاً أو مدة أقصر.
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        <div className="space-y-3 rounded-2xl border border-border bg-surface p-5">
+        <motion.div
+          initial="initial"
+          animate="animate"
+          variants={fadeUp}
+          transition={{ duration: 0.45, delay: 0.1 }}
+          className="space-y-3 rounded-2xl border border-border bg-surface p-5"
+        >
           <div className="grid grid-cols-2 gap-3">
             <input
               placeholder="اسمك"
               value={renterName}
               onChange={(e) => setRenterName(e.target.value)}
-              className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-sm text-ink"
+              className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-sm text-ink transition-colors focus:border-primary"
             />
             <input
               placeholder="رقم هاتفك"
               value={renterPhone}
               onChange={(e) => setRenterPhone(e.target.value)}
               dir="ltr"
-              className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-sm text-ink"
+              className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-sm text-ink transition-colors focus:border-primary"
             />
           </div>
 
@@ -183,7 +252,7 @@ export default function PublicBookingPage() {
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2.5 text-sm text-ink"
+                className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2.5 text-sm text-ink transition-colors focus:border-primary"
               />
             </label>
             <label className="text-xs text-subtle">
@@ -191,7 +260,7 @@ export default function PublicBookingPage() {
               <select
                 value={rateType}
                 onChange={(e) => setRateType(e.target.value as RateType)}
-                className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2.5 text-sm text-ink"
+                className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2.5 text-sm text-ink transition-colors focus:border-primary"
               >
                 <option value="day">يوم</option>
                 <option value="week">أسبوع</option>
@@ -205,7 +274,7 @@ export default function PublicBookingPage() {
                 min={1}
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2.5 text-sm text-ink"
+                className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2.5 text-sm text-ink transition-colors focus:border-primary"
               />
             </label>
           </div>
@@ -219,7 +288,7 @@ export default function PublicBookingPage() {
               <select
                 value={accountId}
                 onChange={(e) => setAccountId(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border bg-surface2 px-3 py-2.5 text-sm text-ink"
+                className="mt-1 w-full rounded-lg border border-border bg-surface2 px-3 py-2.5 text-sm text-ink transition-colors focus:border-primary"
               >
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -241,11 +310,24 @@ export default function PublicBookingPage() {
             </div>
             <div className="flex items-center justify-between border-t border-border pt-2">
               <span className="text-subtle">الإجمالي</span>
-              <span className="font-semibold text-primary">R{liveTotal.toLocaleString()}</span>
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={liveTotal}
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.15 }}
+                  className="font-semibold text-primary"
+                >
+                  R{liveTotal.toLocaleString()}
+                </motion.span>
+              </AnimatePresence>
             </div>
           </div>
 
-          <button
+          <motion.button
+            whileHover={!(!selectedDate || hasConflict) ? { scale: 1.015 } : undefined}
+            whileTap={!(!selectedDate || hasConflict) ? { scale: 0.98 } : undefined}
             onClick={async () => {
               setFormError(null);
               if (!selectedDate) {
@@ -285,8 +367,8 @@ export default function PublicBookingPage() {
             disabled={!selectedDate || hasConflict}
           >
             {submitting ? "جارٍ الحجز…" : "تأكيد الحجز"}
-          </button>
-        </div>
+          </motion.button>
+        </motion.div>
       </div>
     </div>
   );
