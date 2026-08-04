@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, Fragment } from "react";
+import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   onAuthStateChanged,
@@ -220,6 +221,10 @@ export default function LancerPage() {
             : "border-primary/30 bg-gradient-to-b from-primary/10 to-surface"
         }`}
       >
+        <div className="absolute inset-0 opacity-20">
+          <Image src="/lancer-hero.jpg" alt="" fill className="object-cover object-[center_35%]" />
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-bg/60 to-bg" />
         {activeBooking && (
           <span className="absolute right-5 top-5 flex h-2.5 w-2.5">
             <motion.span

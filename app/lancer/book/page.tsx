@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import { MessageCircle, CheckCircle2 } from "lucide-react";
 import { getCarRates, getBankAccounts, type CarRates, type BankAccount } from "@/lib/settings";
@@ -180,13 +181,41 @@ export default function PublicBookingPage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg px-6 py-16">
-      <motion.div initial="initial" animate="animate" variants={fadeUp} transition={{ duration: 0.4 }}>
-        <h1 className="font-display text-xl font-semibold text-ink">احجز لانسر</h1>
-        <p className="mt-1 text-sm text-muted">اختر تاريخ الاستلام من التقويم، واملأ الباقي.</p>
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.6 }}
+        className="relative h-[46vh] min-h-[280px] w-full overflow-hidden"
+      >
+        <motion.div
+          initial={{ scale: 1.08 }}
+          animate={{ scale: 1 }}
+          transition={{ duration: 1.1, ease: "easeOut" }}
+          className="relative h-full w-full"
+        >
+          <Image
+            src="/lancer-hero.jpg"
+            alt="Mitsubishi Lancer"
+            fill
+            priority
+            className="object-cover object-[center_35%]"
+          />
+        </motion.div>
+        <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/30 to-bg/10" />
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.5 }}
+          className="absolute inset-x-0 bottom-0 px-6 pb-6 text-center"
+        >
+          <p className="font-display text-2xl font-bold text-ink drop-shadow">احجز لانسر</p>
+          <p className="mt-1 text-sm text-muted drop-shadow">اختر تاريخ الاستلام من التقويم، واملأ الباقي.</p>
+        </motion.div>
       </motion.div>
 
-      <AnimatePresence>
+      <div className="mx-auto max-w-lg px-6 pb-16 pt-8">
+        <AnimatePresence>
         {formError && (
           <motion.div
             initial={{ opacity: 0, height: 0, marginTop: 0 }}
@@ -370,6 +399,7 @@ export default function PublicBookingPage() {
           </motion.button>
         </motion.div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
