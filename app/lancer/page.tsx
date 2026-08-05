@@ -10,7 +10,7 @@ import {
   type User,
 } from "firebase/auth";
 import { auth, firebaseEnabled } from "@/lib/firebase";
-import { getCarRates, setCarRates, getBankAccounts, setBankAccounts, type CarRates, type BankAccount } from "@/lib/settings";
+import { getCarRates, setCarRates, getBankAccounts, setBankAccounts, getStudents, setStudents, type CarRates, type BankAccount, type Student } from "@/lib/settings";
 import {
   createBooking,
   confirmPayment,
@@ -77,6 +77,10 @@ export default function LancerPage() {
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [savingAccounts, setSavingAccounts] = useState(false);
 
+  const [students, setStudentsState] = useState<Student[]>([]);
+  const [studentsOpen, setStudentsOpen] = useState(false);
+  const [savingStudents, setSavingStudents] = useState(false);
+
   const [bookings, setBookings] = useState<CarBooking[]>([]);
   const [renterName, setRenterName] = useState("");
   const [renterPhone, setRenterPhone] = useState("");
@@ -108,6 +112,7 @@ export default function LancerPage() {
     });
     getBookings().then(setBookings);
     getBankAccounts().then(setAccounts);
+    getStudents().then(setStudentsState);
   }, [user]);
 
   if (!firebaseEnabled) {
@@ -181,12 +186,15 @@ export default function LancerPage() {
 
   const thisMonth = new Date().toISOString().slice(0, 7);
   const lastMonth = shiftMonth(thisMonth, -1);
+  // Profit only counts once the car is actually back — grouped by the
+  // month it was returned, not the month it was booked.
+  const completedBookings = bookings.filter((b) => b.status === "completed");
   const monthTotal = (ym: string) =>
-    bookings.filter((b) => monthStr(b.createdAt) === ym).reduce((sum, b) => sum + b.total, 0);
+    completedBookings.filter((b) => monthStr(b.completedAt) === ym).reduce((sum, b) => sum + b.total, 0);
 
   const monthlyMap = new Map<string, number>();
-  for (const b of bookings) {
-    const m = monthStr(b.createdAt);
+  for (const b of completedBookings) {
+    const m = monthStr(b.completedAt);
     monthlyMap.set(m, (monthlyMap.get(m) ?? 0) + b.total);
   }
   const monthlyTotals = Array.from(monthlyMap.entries())
@@ -412,13 +420,13 @@ export default function LancerPage() {
       {/* This month / last month */}
       <div className="mt-6 grid grid-cols-2 gap-4">
         <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-subtle">هذا الشهر</p>
+          <p className="text-xs text-subtle">هذا الشهر (حجوزات مكتملة)</p>
           <p className="mt-1 font-mono text-xl font-bold text-primary" dir="ltr">
             R{monthTotal(thisMonth).toLocaleString()}
           </p>
         </div>
         <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-subtle">الشهر الماضي</p>
+          <p className="text-xs text-subtle">الشهر الماضي (حجوزات مكتملة)</p>
           <p className="mt-1 font-mono text-xl font-bold text-ink" dir="ltr">
             R{monthTotal(lastMonth).toLocaleString()}
           </p>
@@ -593,6 +601,86 @@ export default function LancerPage() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Students (name/phone autocomplete on booking page) */}
+      <div className="mt-6 rounded-2xl border border-border bg-surface p-5">
+        <button
+          onClick={() => setStudentsOpen((v) => !v)}
+          className="flex w-full items-center justify-between text-sm font-semibold text-ink"
+        >
+          قائمة الطلاب (تعبئة تلقائية)
+          <motion.span animate={{ rotate: studentsOpen ? 180 : 0 }} className="text-xs text-subtle">
+            {studentsOpen ? "إخفاء ▲" : "تعديل ▼"}
+          </motion.span>
+        </button>
+        <p className="mt-1 text-xs text-subtle">
+          يظهر هذا للعملاء كاقتراح أثناء الكتابة — أي اسم غير موجود بالقائمة يُكتب يدوياً بشكل طبيعي.
+        </p>
+        <AnimatePresence initial={false}>
+          {studentsOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
+              className="overflow-hidden"
+            >
+              <div className="mt-4 space-y-2">
+                {students.map((s, i) => (
+                  <div key={s.id} className="flex items-center gap-2">
+                    <input
+                      value={s.name}
+                      onChange={(e) => {
+                        const next = [...students];
+                        next[i] = { ...s, name: e.target.value };
+                        setStudentsState(next);
+                      }}
+                      placeholder="الاسم (عربي أو إنجليزي)"
+                      className="w-1/2 rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                    />
+                    <input
+                      value={s.phone}
+                      onChange={(e) => {
+                        const next = [...students];
+                        next[i] = { ...s, phone: e.target.value };
+                        setStudentsState(next);
+                      }}
+                      placeholder="رقم الهاتف"
+                      dir="ltr"
+                      className="w-1/2 rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                    />
+                    <button
+                      onClick={() => setStudentsState(students.filter((_, idx) => idx !== i))}
+                      className="shrink-0 text-xs text-subtle underline"
+                    >
+                      حذف
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() =>
+                    setStudentsState([...students, { id: `st-${Date.now()}`, name: "", phone: "" }])
+                  }
+                  className="w-full rounded-lg border border-dashed border-border py-2 text-xs text-subtle hover:text-ink"
+                >
+                  + إضافة طالب
+                </button>
+              </div>
+              <button
+                onClick={async () => {
+                  setSavingStudents(true);
+                  await setStudents(students.filter((s) => s.name.trim() && s.phone.trim()));
+                  setSavingStudents(false);
+                }}
+                className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
+              >
+                {savingStudents ? "جارٍ الحفظ…" : "حفظ القائمة"}
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
       {monthlyTotals.length > 0 && (
         <div className="mt-6">
           <h3 className="text-sm font-semibold text-ink">سجل شهري</h3>

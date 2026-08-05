@@ -4,11 +4,18 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight, ChevronLeft } from "lucide-react";
 
-const MONTH_NAMES = [
-  "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-  "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
-];
-const WEEKDAY_NAMES = ["أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"];
+const MONTH_NAMES: Record<"ar" | "en", string[]> = {
+  ar: ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"],
+  en: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+};
+const WEEKDAY_NAMES: Record<"ar" | "en", string[]> = {
+  ar: ["أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"],
+  en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+};
+const LEGEND: Record<"ar" | "en", { available: string; booked: string; yours: string }> = {
+  ar: { available: "متاح", booked: "محجوز", yours: "اختيارك" },
+  en: { available: "Available", booked: "Booked", yours: "Your pick" },
+};
 
 function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -19,9 +26,10 @@ interface Props {
   projectedDates: Set<string>;
   selected: string | null;
   onSelect: (date: string) => void;
+  lang: "ar" | "en";
 }
 
-export default function BookingCalendar({ bookedDates, projectedDates, selected, onSelect }: Props) {
+export default function BookingCalendar({ bookedDates, projectedDates, selected, onSelect, lang }: Props) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -46,6 +54,7 @@ export default function BookingCalendar({ bookedDates, projectedDates, selected,
 
   return (
     <div
+      dir={lang === "en" ? "ltr" : "rtl"}
       className="overflow-hidden rounded-2xl border border-border bg-surface2 p-4"
       onTouchStart={(e) => (touchStartX.current = e.touches[0].clientX)}
       onTouchEnd={(e) => {
@@ -60,9 +69,9 @@ export default function BookingCalendar({ bookedDates, projectedDates, selected,
           whileTap={{ scale: 0.85 }}
           onClick={() => goToMonth(-1)}
           className="rounded-full p-1.5 text-muted hover:bg-surface hover:text-ink"
-          aria-label="الشهر السابق"
+          aria-label={lang === "en" ? "Previous month" : "الشهر السابق"}
         >
-          <ChevronRight size={18} />
+          {lang === "en" ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
         </motion.button>
         <div className="relative h-5 w-32 overflow-hidden text-center">
           <AnimatePresence mode="popLayout" initial={false} custom={direction}>
@@ -75,7 +84,7 @@ export default function BookingCalendar({ bookedDates, projectedDates, selected,
               transition={{ duration: 0.22, ease: "easeOut" }}
               className="absolute inset-x-0 font-display text-sm font-semibold text-ink"
             >
-              {MONTH_NAMES[month]} {year}
+              {MONTH_NAMES[lang][month]} {year}
             </motion.p>
           </AnimatePresence>
         </div>
@@ -84,14 +93,14 @@ export default function BookingCalendar({ bookedDates, projectedDates, selected,
           whileTap={{ scale: 0.85 }}
           onClick={() => goToMonth(1)}
           className="rounded-full p-1.5 text-muted hover:bg-surface hover:text-ink"
-          aria-label="الشهر التالي"
+          aria-label={lang === "en" ? "Next month" : "الشهر التالي"}
         >
-          <ChevronLeft size={18} />
+          {lang === "en" ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </motion.button>
       </div>
 
       <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] text-subtle">
-        {WEEKDAY_NAMES.map((w) => (
+        {WEEKDAY_NAMES[lang].map((w) => (
           <div key={w}>{w}</div>
         ))}
       </div>
@@ -143,13 +152,13 @@ export default function BookingCalendar({ bookedDates, projectedDates, selected,
 
       <div className="mt-3 flex items-center gap-4 text-[11px] text-subtle">
         <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-green-500/40" /> متاح
+          <span className="h-2.5 w-2.5 rounded-full bg-green-500/40" /> {LEGEND[lang].available}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-red-500/40" /> محجوز
+          <span className="h-2.5 w-2.5 rounded-full bg-red-500/40" /> {LEGEND[lang].booked}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-primary" /> اختيارك
+          <span className="h-2.5 w-2.5 rounded-full bg-primary" /> {LEGEND[lang].yours}
         </span>
       </div>
     </div>

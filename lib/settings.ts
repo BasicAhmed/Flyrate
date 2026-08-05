@@ -98,3 +98,29 @@ export async function setBankAccounts(accounts: BankAccount[]) {
   if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
   await setDoc(doc(db, "settings", "bankAccounts"), { accounts, updatedAt: serverTimestamp() });
 }
+
+export interface Student {
+  id: string;
+  name: string;
+  phone: string;
+}
+
+/** Known students for name/phone autocomplete on the booking page. Public
+ *  read (needed for the autocomplete to work without login) — so treat
+ *  this as a convenience list, not a secured contact database. */
+export async function getStudents(): Promise<Student[]> {
+  if (!firebaseEnabled || !db) return [];
+  try {
+    const snap = await getDoc(doc(db, "settings", "students"));
+    if (!snap.exists()) return [];
+    const students = snap.data().students;
+    return Array.isArray(students) ? students : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function setStudents(students: Student[]) {
+  if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
+  await setDoc(doc(db, "settings", "students"), { students, updatedAt: serverTimestamp() });
+}
