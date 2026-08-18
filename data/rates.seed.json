@@ -1,15 +1,31 @@
 {
-  "note": "PLACEHOLDER MARKET PRICES — replace with real figures in /admin before launch. The site adds FlyRate's profit margin (default 3.5%, editable in /admin) on top of these automatically. All corridors now use the same divide convention: rate = marketPrice * (1 + margin), and the calculator divides the sent amount by it (marketPrice = units of FROM currency per 1 unit of TO currency). QAR→MYR and AED→MYR are freshly retargeted from the old ZAR corridors — their marketPrice values below are rough placeholders, double-check and update in /admin before going live.",
+  "note": "PLACEHOLDER MARKET PRICES — replace with real figures in /admin before launch. The site adds FlyRate's profit margin (default 3.5%, editable in /admin) on top of these automatically, same percentage in every direction. All corridors use the divide convention: rate = marketPrice * (1 + margin), calculator divides the sent amount by it (marketPrice = units of FROM currency per 1 unit of TO currency) — this is what makes the reverse corridors 'buy low': student sends MYR/ZAR/SDG, margin pushes the rate up, so they receive less foreign currency than raw market price would give, same mechanic as the forward corridors just mirrored. Every reverse corridor (MYR/ZAR/SDG → rest) plus SDG→QAR and SDG→AED are brand new and their marketPrice values below are rough cross-rate estimates only — verify and update every one in /admin before going live.",
   "rates": [
     { "from": "SDG", "to": "ZAR", "marketPrice": 345 },
     { "from": "SDG", "to": "EGP", "marketPrice": 128 },
     { "from": "SDG", "to": "MYR", "marketPrice": 1590 },
     { "from": "SDG", "to": "SAR", "marketPrice": 1667 },
     { "from": "SDG", "to": "USDT", "marketPrice": 6250 },
+    { "from": "SDG", "to": "QAR", "marketPrice": 1925 },
+    { "from": "SDG", "to": "AED", "marketPrice": 1336 },
     { "from": "EGP", "to": "ZAR", "marketPrice": 2.51 },
     { "from": "EGP", "to": "MYR", "marketPrice": 12.08 },
     { "from": "SAR", "to": "MYR", "marketPrice": 1.095 },
     { "from": "QAR", "to": "MYR", "marketPrice": 0.826 },
-    { "from": "AED", "to": "MYR", "marketPrice": 1.19 }
+    { "from": "AED", "to": "MYR", "marketPrice": 1.19 },
+    { "from": "MYR", "to": "SDG", "marketPrice": 0.00063 },
+    { "from": "MYR", "to": "ZAR", "marketPrice": 0.217 },
+    { "from": "MYR", "to": "EGP", "marketPrice": 0.0805 },
+    { "from": "MYR", "to": "SAR", "marketPrice": 1.048 },
+    { "from": "MYR", "to": "QAR", "marketPrice": 1.211 },
+    { "from": "MYR", "to": "AED", "marketPrice": 0.84 },
+    { "from": "MYR", "to": "USDT", "marketPrice": 3.93 },
+    { "from": "ZAR", "to": "SDG", "marketPrice": 0.0029 },
+    { "from": "ZAR", "to": "EGP", "marketPrice": 0.371 },
+    { "from": "ZAR", "to": "MYR", "marketPrice": 4.611 },
+    { "from": "ZAR", "to": "SAR", "marketPrice": 4.832 },
+    { "from": "ZAR", "to": "QAR", "marketPrice": 5.582 },
+    { "from": "ZAR", "to": "AED", "marketPrice": 3.874 },
+    { "from": "ZAR", "to": "USDT", "marketPrice": 18.12 }
   ]
 }

@@ -17,18 +17,36 @@ export const CURRENCIES: Record<CurrencyCode, CurrencyInfo> = {
   USDT: { code: "USDT", name: "USDT (تيثر)", flag: "₮" },
 };
 
-// FlyRate's exact supported corridors — one direction each (not bidirectional).
+// FlyRate's exact supported corridors — one direction each.
 export const CORRIDORS: { from: CurrencyCode; to: CurrencyCode }[] = [
+  // Forward — remittance into MYR/ZAR/SDG
   { from: "SDG", to: "ZAR" },
   { from: "SDG", to: "EGP" },
   { from: "SDG", to: "MYR" },
   { from: "SDG", to: "SAR" },
   { from: "SDG", to: "USDT" },
+  { from: "SDG", to: "QAR" },
+  { from: "SDG", to: "AED" },
   { from: "EGP", to: "ZAR" },
   { from: "EGP", to: "MYR" },
   { from: "SAR", to: "MYR" },
   { from: "QAR", to: "MYR" },
   { from: "AED", to: "MYR" },
+  // Reverse (التحويل العكسي) — out of MYR/ZAR/SDG to the rest
+  { from: "MYR", to: "SDG" },
+  { from: "MYR", to: "ZAR" },
+  { from: "MYR", to: "EGP" },
+  { from: "MYR", to: "SAR" },
+  { from: "MYR", to: "QAR" },
+  { from: "MYR", to: "AED" },
+  { from: "MYR", to: "USDT" },
+  { from: "ZAR", to: "SDG" },
+  { from: "ZAR", to: "EGP" },
+  { from: "ZAR", to: "MYR" },
+  { from: "ZAR", to: "SAR" },
+  { from: "ZAR", to: "QAR" },
+  { from: "ZAR", to: "AED" },
+  { from: "ZAR", to: "USDT" },
 ];
 
 export function pairKey(from: CurrencyCode, to: CurrencyCode) {
