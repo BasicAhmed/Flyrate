@@ -16,7 +16,7 @@ export interface RateRow {
 /** Applies FlyRate's margin to a market price to get the customer-facing rate.
  *  Divide-convention corridors: marking the rate UP costs the customer more
  *  (they get less on the other side) — that's the profit.
- *  Multiply-convention corridors (SAR→ZAR, QAR→ZAR): marking the rate DOWN
+ *  Multiply-convention corridors (QAR→MYR): marking the rate DOWN
  *  gives the customer less on conversion — same effect, opposite direction. */
 export function computeRate(
   from: CurrencyCode,

@@ -27,9 +27,8 @@ export const CORRIDORS: { from: CurrencyCode; to: CurrencyCode }[] = [
   { from: "EGP", to: "ZAR" },
   { from: "EGP", to: "MYR" },
   { from: "SAR", to: "MYR" },
-  { from: "SAR", to: "ZAR" },
-  { from: "QAR", to: "ZAR" },
-  { from: "AED", to: "ZAR" },
+  { from: "QAR", to: "MYR" },
+  { from: "AED", to: "MYR" },
 ];
 
 export function pairKey(from: CurrencyCode, to: CurrencyCode) {
@@ -37,7 +36,7 @@ export function pairKey(from: CurrencyCode, to: CurrencyCode) {
 }
 
 // Corridors where the calculator multiplies instead of divides.
-export const MULTIPLY_CORRIDORS = new Set(["SAR_ZAR", "QAR_ZAR"]);
+export const MULTIPLY_CORRIDORS = new Set(["QAR_MYR"]);
 
 export function isMultiplyCorridor(from: CurrencyCode, to: CurrencyCode): boolean {
   return MULTIPLY_CORRIDORS.has(pairKey(from, to));

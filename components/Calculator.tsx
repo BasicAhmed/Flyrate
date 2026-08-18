@@ -25,7 +25,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
   const amountNum = parseFloat(amount) || 0;
 
   // Almost every corridor uses "amount ÷ rate" (rate = units of FROM per 1 unit of TO).
-  // SAR→ZAR and QAR→ZAR are the exceptions: they use "amount × rate" instead.
+  // QAR→MYR is the exception: it uses "amount × rate" instead.
   const usesMultiply = toCurrency ? isMultiplyCorridor(fromCode, toCurrency.code) : false;
 
   // "send" mode: student knows what they're sending (fromCurrency amount).

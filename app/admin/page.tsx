@@ -223,7 +223,7 @@ export default function AdminPage() {
             const fromC = CURRENCIES[from];
             const toC = CURRENCIES[to];
             const key = `${from}_${to}`;
-            const usesMultiply = key === "SAR_ZAR" || key === "QAR_ZAR";
+            const usesMultiply = key === "QAR_MYR";
 
             return (
               <div
