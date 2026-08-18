@@ -24,7 +24,8 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
 
   const amountNum = parseFloat(amount) || 0;
 
-  // Every corridor now uses "amount ÷ rate" (rate = units of FROM per 1 unit of TO).
+  // Each pair has one market price; whichever side is the "b→a" leg of the
+  // pair multiplies instead of dividing (see lib/corridors.ts + lib/rates.ts).
   const usesMultiply = toCurrency ? isMultiplyCorridor(fromCode, toCurrency.code) : false;
 
   // "send" mode: student knows what they're sending (fromCurrency amount).

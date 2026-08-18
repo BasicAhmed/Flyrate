@@ -12,7 +12,7 @@ import { getRates, setMarketPrice, computeRate, type RateRow } from "@/lib/rates
 import { formatRate } from "@/lib/format";
 import { getMarginPercent, setMarginPercent, getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, getRecentSales, type SaleEntry } from "@/lib/sales";
-import { CORRIDORS, CURRENCIES } from "@/lib/corridors";
+import { PAIRS, CURRENCIES } from "@/lib/corridors";
 
 function todayStr() {
   const d = new Date();
@@ -212,17 +212,17 @@ export default function AdminPage() {
         )}
 
         <div className="mt-4 space-y-3">
-          {CORRIDORS.map(({ from, to }) => {
-            const row = rates.find((r) => r.from === from && r.to === to) ?? {
-              from,
-              to,
+          {PAIRS.map(({ a, b }) => {
+            const row = rates.find((r) => r.from === a && r.to === b) ?? {
+              from: a,
+              to: b,
               marketPrice: 0,
               rate: 0,
               updatedAt: null,
             };
-            const fromC = CURRENCIES[from];
-            const toC = CURRENCIES[to];
-            const key = `${from}_${to}`;
+            const fromC = CURRENCIES[a];
+            const toC = CURRENCIES[b];
+            const key = `${a}_${b}`;
 
             return (
               <div
@@ -232,13 +232,13 @@ export default function AdminPage() {
               >
                 <div className="flex items-center justify-between text-sm text-ink">
                   <span>
-                    {fromC.flag} {from} → {toC.flag} {to}
+                    {fromC.flag} {a} ⇄ {toC.flag} {b}
                   </span>
-                  <span className="text-xs text-subtle">(÷ قسمة)</span>
+                  <span className="text-xs text-subtle">سعر سوق واحد للاتجاهين</span>
                 </div>
                 <div className="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-3">
                   <label className="text-xs text-subtle">
-                    سعر السوق
+                    سعر السوق ({a} لكل 1 {b})
                     <input
                       type="number"
                       step="any"
@@ -246,10 +246,13 @@ export default function AdminPage() {
                       onChange={(e) => {
                         const val = parseFloat(e.target.value);
                         setRates((prev) => {
-                          const others = prev.filter((r) => !(r.from === from && r.to === to));
+                          const others = prev.filter(
+                            (r) => !((r.from === a && r.to === b) || (r.from === b && r.to === a))
+                          );
                           return [
                             ...others,
-                            { from, to, marketPrice: val, rate: computeRate(from, to, val, margin), updatedAt: row.updatedAt },
+                            { from: a, to: b, marketPrice: val, rate: computeRate(a, b, val, margin), updatedAt: row.updatedAt },
+                            { from: b, to: a, marketPrice: val, rate: computeRate(b, a, val, margin), updatedAt: row.updatedAt },
                           ];
                         });
                       }}
@@ -257,17 +260,16 @@ export default function AdminPage() {
                     />
                   </label>
                   <div className="text-xs text-subtle">
-                    السعر النهائي
-                    <div className="mt-1 rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm font-semibold text-primary">
-                      {formatRate(computeRate(from, to, row.marketPrice, margin))}
-                    </div>
+                    {a}→{b}: <span className="font-semibold text-primary">{formatRate(computeRate(a, b, row.marketPrice, margin))}</span>
+                    <br />
+                    {b}→{a}: <span className="font-semibold text-primary">{formatRate(computeRate(b, a, row.marketPrice, margin))}</span>
                   </div>
                   <button
                     onClick={async () => {
                       setSaving(key);
                       setSaveError(null);
                       try {
-                        await setMarketPrice(from, to, row.marketPrice);
+                        await setMarketPrice(a, b, row.marketPrice);
                       } catch (err) {
                         setSaveError(err instanceof Error ? err.message : String(err));
                       }
