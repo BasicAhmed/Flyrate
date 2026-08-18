@@ -35,8 +35,8 @@ export function pairKey(from: CurrencyCode, to: CurrencyCode) {
   return `${from}_${to}`;
 }
 
-// Corridors where the calculator multiplies instead of divides.
-export const MULTIPLY_CORRIDORS = new Set(["QAR_MYR"]);
+// All corridors use the divide convention now — nothing to see here.
+export const MULTIPLY_CORRIDORS = new Set<string>();
 
 export function isMultiplyCorridor(from: CurrencyCode, to: CurrencyCode): boolean {
   return MULTIPLY_CORRIDORS.has(pairKey(from, to));

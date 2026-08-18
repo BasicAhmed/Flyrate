@@ -1,5 +1,5 @@
 {
-  "note": "PLACEHOLDER MARKET PRICES — replace with real figures in /admin before launch. The site adds FlyRate's profit margin (default 3.5%, editable in /admin) on top of these automatically. Almost all corridors: rate = marketPrice * (1 + margin) and the calculator divides by it. Exception — QAR→MYR: rate = marketPrice * (1 - margin) and the calculator multiplies by it. QAR→MYR and AED→MYR are freshly retargeted from the old ZAR corridors — their marketPrice values below are rough placeholders, double-check and update in /admin before going live.",
+  "note": "PLACEHOLDER MARKET PRICES — replace with real figures in /admin before launch. The site adds FlyRate's profit margin (default 3.5%, editable in /admin) on top of these automatically. All corridors now use the same divide convention: rate = marketPrice * (1 + margin), and the calculator divides the sent amount by it (marketPrice = units of FROM currency per 1 unit of TO currency). QAR→MYR and AED→MYR are freshly retargeted from the old ZAR corridors — their marketPrice values below are rough placeholders, double-check and update in /admin before going live.",
   "rates": [
     { "from": "SDG", "to": "ZAR", "marketPrice": 345 },
     { "from": "SDG", "to": "EGP", "marketPrice": 128 },
@@ -9,7 +9,7 @@
     { "from": "EGP", "to": "ZAR", "marketPrice": 2.51 },
     { "from": "EGP", "to": "MYR", "marketPrice": 12.08 },
     { "from": "SAR", "to": "MYR", "marketPrice": 1.095 },
-    { "from": "QAR", "to": "MYR", "marketPrice": 1.21 },
+    { "from": "QAR", "to": "MYR", "marketPrice": 0.826 },
     { "from": "AED", "to": "MYR", "marketPrice": 1.19 }
   ]
 }

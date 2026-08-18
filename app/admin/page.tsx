@@ -223,7 +223,6 @@ export default function AdminPage() {
             const fromC = CURRENCIES[from];
             const toC = CURRENCIES[to];
             const key = `${from}_${to}`;
-            const usesMultiply = key === "QAR_MYR";
 
             return (
               <div
@@ -235,9 +234,7 @@ export default function AdminPage() {
                   <span>
                     {fromC.flag} {from} → {toC.flag} {to}
                   </span>
-                  <span className="text-xs text-subtle">
-                    ({usesMultiply ? "× ضرب" : "÷ قسمة"})
-                  </span>
+                  <span className="text-xs text-subtle">(÷ قسمة)</span>
                 </div>
                 <div className="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-3">
                   <label className="text-xs text-subtle">
