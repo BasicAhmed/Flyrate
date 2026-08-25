@@ -9,6 +9,7 @@ import {
 } from "firebase/auth";
 import { auth, firebaseEnabled } from "@/lib/firebase";
 import { getRates, setMarketPrice, computeRate, updateRatesFromLiveFx, type RateRow } from "@/lib/rates";
+import { appendRateHistory } from "@/lib/rateHistory";
 import { formatRate } from "@/lib/format";
 import { getMarginPercent, setMarginPercent, getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, getRecentSales, type SaleEntry } from "@/lib/sales";
@@ -306,6 +307,7 @@ export default function AdminPage() {
                       setSaveError(null);
                       try {
                         await setMarketPrice(a, b, row.marketPrice, row.sdgSource);
+                        await appendRateHistory(a, b, row.marketPrice);
                       } catch (err) {
                         setSaveError(err instanceof Error ? err.message : String(err));
                       }

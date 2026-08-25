@@ -3,6 +3,7 @@ import { db, firebaseEnabled } from "./firebase";
 import { PAIRS, pairKey, isForwardDirection, type CurrencyCode } from "./corridors";
 import { getMarginPercent } from "./settings";
 import { roundForDisplay } from "./format";
+import { appendRateHistory } from "./rateHistory";
 import seed from "@/data/rates.seed.json";
 
 /** For SDG pairs only: the raw USDT/SDG data the marketPrice was derived
@@ -165,6 +166,7 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
     const marketPrice = rateA / rateB;
     const involvesSdg = a === "SDG" || b === "SDG";
     await setMarketPrice(a, b, marketPrice, involvesSdg ? sdgSource : undefined);
+    await appendRateHistory(a, b, marketPrice);
     updated.push(key);
   }
 

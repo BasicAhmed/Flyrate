@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import { PAIRS, type CurrencyCode } from "@/lib/corridors";
 import { fetchCombinedUsdRates } from "@/lib/fx";
+import { mergeHistoryEntry, todayDateStr, type RateHistoryPoint } from "@/lib/rateHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,12 @@ export async function GET(request: Request) {
       { merge: true }
     );
     updated.push({ pair: key, marketPrice });
+
+    // Append to this pair's daily history (dedupes same-day reruns).
+    const historyRef = db.collection("rateHistory").doc(key);
+    const historySnap = await historyRef.get();
+    const existing: RateHistoryPoint[] = historySnap.exists ? historySnap.data()?.entries ?? [] : [];
+    await historyRef.set({ entries: mergeHistoryEntry(existing, todayDateStr(), marketPrice) });
   }
 
   return NextResponse.json({ ok: true, at: new Date().toISOString(), updated, skipped, sdgError, sdgDetail });

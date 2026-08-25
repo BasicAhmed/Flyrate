@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, MessageCircle } from "lucide-react";
 import { FROM_CURRENCIES, validToCurrencies, CURRENCIES, isMultiplyCorridor, type CurrencyCode } from "@/lib/corridors";
 import { formatRate } from "@/lib/format";
 import type { RateRow } from "@/lib/rates";
+import { getRateHistory, type RateHistoryPoint } from "@/lib/rateHistory";
 import { buildOrderMessage, whatsappLink } from "@/lib/whatsapp";
+import RateHistoryChart from "./RateHistoryChart";
 
 type Mode = "send" | "receive";
 
@@ -23,6 +25,18 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
   const rate = rates.find((r) => r.from === fromCode && r.to === toCurrency?.code);
 
   const involvesSudan = fromCode === "SDG" || toCurrency?.code === "SDG";
+
+  const [history, setHistory] = useState<RateHistoryPoint[]>([]);
+  useEffect(() => {
+    if (!toCurrency) return;
+    let cancelled = false;
+    getRateHistory(fromCode, toCurrency.code, 30).then((points) => {
+      if (!cancelled) setHistory(points);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fromCode, toCurrency]);
 
   const amountNum = parseFloat(amount) || 0;
 
@@ -182,6 +196,10 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                 <span className="font-medium text-muted">المستلم يستلم</span>
               </div>
             </div>
+
+            {toCurrency && (
+              <RateHistoryChart points={history} label={`${fromCurrency.code} ⇄ ${toCurrency.code}`} />
+            )}
 
             <button
               onClick={orderNow}
