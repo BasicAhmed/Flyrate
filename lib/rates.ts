@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, deleteField, serverTimestamp } from "firebase/firestore";
 import { db, firebaseEnabled } from "./firebase";
 import { PAIRS, pairKey, isForwardDirection, type CurrencyCode } from "./corridors";
 import { getMarginPercent } from "./settings";
@@ -18,11 +18,13 @@ export interface RateRow {
   to: CurrencyCode;
   marketPrice: number; // the pair's single true cross-rate, quoted a-per-b
   rate: number; // marketPrice adjusted by the profit margin — what customers see/get
+  marginPercent: number; // the margin actually applied to this pair (override or global default)
+  marginOverride?: number; // set only if this pair has a custom margin; absent = using the global default
   updatedAt: string | null;
   sdgSource?: SdgSourceDetail;
 }
 
-/** Applies FlyRate's margin to a pair's single market price to get the
+/** Applies a margin to a pair's single market price to get the
  *  customer-facing rate for ONE direction of that pair.
  *  marketPrice is always quoted as "units of pair.a per 1 unit of pair.b".
  *  a → b (forward): rate = marketPrice * (1 + margin); amount_b = amount_a / rate.
@@ -46,42 +48,69 @@ function rowsForPair(
   to: CurrencyCode,
   marketPrice: number,
   marginPercent: number,
+  marginOverride: number | undefined,
   updatedAt: string | null,
   sdgSource?: SdgSourceDetail
 ): RateRow[] {
   return [
-    { from, to, marketPrice, rate: computeRate(from, to, marketPrice, marginPercent), updatedAt, sdgSource },
-    { from: to, to: from, marketPrice, rate: computeRate(to, from, marketPrice, marginPercent), updatedAt, sdgSource },
+    {
+      from,
+      to,
+      marketPrice,
+      rate: computeRate(from, to, marketPrice, marginPercent),
+      marginPercent,
+      marginOverride,
+      updatedAt,
+      sdgSource,
+    },
+    {
+      from: to,
+      to: from,
+      marketPrice,
+      rate: computeRate(to, from, marketPrice, marginPercent),
+      marginPercent,
+      marginOverride,
+      updatedAt,
+      sdgSource,
+    },
   ];
 }
 
-function seedRows(marginPercent: number): RateRow[] {
+function seedRows(defaultMargin: number): RateRow[] {
   return seed.rates.flatMap((r) => {
     const a = r.from as CurrencyCode;
     const b = r.to as CurrencyCode;
-    return rowsForPair(a, b, r.marketPrice, marginPercent, null);
+    return rowsForPair(a, b, r.marketPrice, defaultMargin, undefined, null);
   });
 }
 
-/** Reads all rates (one stored market price per pair → both directions'
- *  margin-adjusted rates). Tries Firestore first; falls back to the bundled
- *  seed file so the site works before Firebase is wired up. */
+/** Reads all rates (one stored market price + optional margin override per
+ *  pair → both directions' margin-adjusted rates). Pairs without their own
+ *  override use the global default margin. Tries Firestore first; falls
+ *  back to the bundled seed file so the site works before Firebase is
+ *  wired up. */
 export async function getRates(): Promise<RateRow[]> {
-  const marginPercent = await getMarginPercent();
-  if (!firebaseEnabled || !db) return seedRows(marginPercent);
+  const defaultMargin = await getMarginPercent();
+  if (!firebaseEnabled || !db) return seedRows(defaultMargin);
 
   try {
     const snap = await getDocs(collection(db, "rates"));
-    if (snap.empty) return seedRows(marginPercent);
+    if (snap.empty) return seedRows(defaultMargin);
 
     const map = new Map<
       string,
-      { marketPrice: number; updatedAt: string | null; sdgSource?: SdgSourceDetail }
+      {
+        marketPrice: number;
+        marginOverride?: number;
+        updatedAt: string | null;
+        sdgSource?: SdgSourceDetail;
+      }
     >();
     snap.forEach((d) => {
       const data = d.data();
       map.set(d.id, {
         marketPrice: data.marketPrice,
+        marginOverride: typeof data.marginPercent === "number" ? data.marginPercent : undefined,
         updatedAt: data.updatedAt?.toDate?.().toISOString?.() ?? null,
         sdgSource:
           typeof data.sdgUsdtToSdg === "number" && Array.isArray(data.sdgPrices)
@@ -98,10 +127,19 @@ export async function getRates(): Promise<RateRow[]> {
       const key = pairKey(a, b);
       const entry = map.get(key);
       const marketPrice = entry?.marketPrice ?? fallback.get(key)!;
-      return rowsForPair(a, b, marketPrice, marginPercent, entry?.updatedAt ?? null, entry?.sdgSource);
+      const effectiveMargin = entry?.marginOverride ?? defaultMargin;
+      return rowsForPair(
+        a,
+        b,
+        marketPrice,
+        effectiveMargin,
+        entry?.marginOverride,
+        entry?.updatedAt ?? null,
+        entry?.sdgSource
+      );
     });
   } catch {
-    return seedRows(marginPercent);
+    return seedRows(defaultMargin);
   }
 }
 
@@ -109,7 +147,8 @@ export async function getRates(): Promise<RateRow[]> {
  *  Called from the /admin panel only. Pass either side's currencies; it
  *  always resolves and stores under the pair's canonical key. `sdgSource`
  *  is only meaningful for SDG pairs — stores the raw Binance P2P data the
- *  price came from, so /admin can show exactly what was used. */
+ *  price came from, so /admin can show exactly what was used. Does NOT
+ *  touch the pair's margin override — use setPairMargin for that. */
 export async function setMarketPrice(
   from: CurrencyCode,
   to: CurrencyCode,
@@ -120,13 +159,34 @@ export async function setMarketPrice(
     throw new Error("Firebase is not configured — see .env.example.");
   }
   const key = pairKey(from, to);
-  await setDoc(doc(db, "rates", key), {
-    from,
-    to,
-    marketPrice,
-    updatedAt: serverTimestamp(),
-    ...(sdgSource ? { sdgUsdtToSdg: sdgSource.usdtToSdg, sdgPrices: sdgSource.prices } : {}),
-  });
+  await setDoc(
+    doc(db, "rates", key),
+    {
+      from,
+      to,
+      marketPrice,
+      updatedAt: serverTimestamp(),
+      ...(sdgSource ? { sdgUsdtToSdg: sdgSource.usdtToSdg, sdgPrices: sdgSource.prices } : {}),
+    },
+    { merge: true }
+  );
+}
+
+/** Sets (or clears) a pair-specific margin override, independent of market
+ *  price. Pass `percent: null` to remove the override and fall back to the
+ *  global default margin (Settings → margin in /admin). High-demand
+ *  corridors (e.g. anything involving SDG) can carry a higher margin;
+ *  low-demand ones can be priced closer to market to stay competitive. */
+export async function setPairMargin(from: CurrencyCode, to: CurrencyCode, percent: number | null) {
+  if (!firebaseEnabled || !db) {
+    throw new Error("Firebase is not configured — see .env.example.");
+  }
+  const key = pairKey(from, to);
+  await setDoc(
+    doc(db, "rates", key),
+    { marginPercent: percent === null ? deleteField() : percent },
+    { merge: true }
+  );
 }
 
 export interface FxUpdateResult {
@@ -139,7 +199,8 @@ export interface FxUpdateResult {
  *  session using the normal authenticated client SDK instead of the service
  *  account. Pulls live rates via the same-origin /api/fx relay (avoids
  *  browser CORS issues) — that includes SDG via Binance P2P now, so every
- *  pair updates the same way; the raw SDG offers get stored too. */
+ *  pair updates the same way; the raw SDG offers get stored too. Only
+ *  touches market prices, never margin overrides. */
 export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   const res = await fetch("/api/fx", { cache: "no-store" });
   const data = await res.json();

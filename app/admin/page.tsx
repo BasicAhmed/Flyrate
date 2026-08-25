@@ -8,7 +8,7 @@ import {
   type User,
 } from "firebase/auth";
 import { auth, firebaseEnabled } from "@/lib/firebase";
-import { getRates, setMarketPrice, computeRate, updateRatesFromLiveFx, type RateRow } from "@/lib/rates";
+import { getRates, setMarketPrice, setPairMargin, computeRate, updateRatesFromLiveFx, type RateRow } from "@/lib/rates";
 import { appendRateHistory } from "@/lib/rateHistory";
 import { formatRate } from "@/lib/format";
 import { getMarginPercent, setMarginPercent, getDailyTarget, setDailyTarget } from "@/lib/settings";
@@ -34,6 +34,7 @@ export default function AdminPage() {
 
   const [rates, setRates] = useState<RateRow[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
+  const [marginInputs, setMarginInputs] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fxUpdating, setFxUpdating] = useState(false);
   const [fxMessage, setFxMessage] = useState<string | null>(null);
@@ -169,9 +170,9 @@ export default function AdminPage() {
 
       {/* Global margin */}
       <div className="mt-8 rounded-2xl border border-border bg-surface p-5">
-        <h2 className="font-display text-base font-semibold text-ink">هامش الربح العام</h2>
+        <h2 className="font-display text-base font-semibold text-ink">هامش الربح العام (الافتراضي)</h2>
         <p className="mt-1 text-xs text-subtle">
-          يُطبّق تلقائياً على كل سعر السوق لحساب السعر النهائي، وعلى حساب الأرباح اليومية.
+          يُطبّق على أي زوج ما عنده هامش خاص بيه — تقدر تحدد هامش مختلف لكل زوج بالأسفل (مثلاً هامش أعلى للأزواج المطلوبة زي السودان، وأقل للأزواج اللي عايز تنافس بيها).
         </p>
         <div className="mt-4 flex items-center gap-3" dir="ltr">
           <input
@@ -203,9 +204,9 @@ export default function AdminPage() {
       <div className="mt-6">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-display text-base font-semibold text-ink">أسعار السوق</h2>
+            <h2 className="font-display text-base font-semibold text-ink">أسعار السوق والهامش لكل زوج</h2>
             <p className="mt-1 text-xs text-subtle">
-              كل الأزواج تتحدث تلقائياً كل يوم — الأزواج العادية من سعر الصرف الحقيقي، وأزواج الجنيه السوداني من متوسط أول 4 عروض شراء USDT/SDG على Binance P2P (لتقلبه الكبير). تقدر تعدل أي سعر يدوياً برضه وهيترجع يتحدث تلقائياً في الدورة الجاية.
+              كل الأزواج تتحدث تلقائياً كل يوم — الأزواج العادية من سعر الصرف الحقيقي، وأزواج الجنيه السوداني من متوسط أول 4 عروض شراء USDT/SDG على Binance P2P (لتقلبه الكبير). تقدر تعدل السعر أو الهامش يدوياً برضه.
             </p>
           </div>
           <button
@@ -253,11 +254,15 @@ export default function AdminPage() {
               to: b,
               marketPrice: 0,
               rate: 0,
+              marginPercent: margin,
+              marginOverride: undefined as number | undefined,
               updatedAt: null,
             };
             const fromC = CURRENCIES[a];
             const toC = CURRENCIES[b];
             const key = `${a}_${b}`;
+            const effectiveMargin = row.marginOverride ?? margin;
+            const marginInputValue = marginInputs[key] ?? (row.marginOverride != null ? String(row.marginOverride) : "");
 
             return (
               <div
@@ -288,8 +293,26 @@ export default function AdminPage() {
                           );
                           return [
                             ...others,
-                            { from: a, to: b, marketPrice: val, rate: computeRate(a, b, val, margin), updatedAt: row.updatedAt },
-                            { from: b, to: a, marketPrice: val, rate: computeRate(b, a, val, margin), updatedAt: row.updatedAt },
+                            {
+                              from: a,
+                              to: b,
+                              marketPrice: val,
+                              rate: computeRate(a, b, val, effectiveMargin),
+                              marginPercent: effectiveMargin,
+                              marginOverride: row.marginOverride,
+                              updatedAt: row.updatedAt,
+                              sdgSource: row.sdgSource,
+                            },
+                            {
+                              from: b,
+                              to: a,
+                              marketPrice: val,
+                              rate: computeRate(b, a, val, effectiveMargin),
+                              marginPercent: effectiveMargin,
+                              marginOverride: row.marginOverride,
+                              updatedAt: row.updatedAt,
+                              sdgSource: row.sdgSource,
+                            },
                           ];
                         });
                       }}
@@ -297,9 +320,9 @@ export default function AdminPage() {
                     />
                   </label>
                   <div className="text-xs text-subtle">
-                    {a}→{b}: <span className="font-semibold text-primary">{formatRate(computeRate(a, b, row.marketPrice, margin))}</span>
+                    {a}→{b}: <span className="font-semibold text-primary">{formatRate(computeRate(a, b, row.marketPrice, effectiveMargin))}</span>
                     <br />
-                    {b}→{a}: <span className="font-semibold text-primary">{formatRate(computeRate(b, a, row.marketPrice, margin))}</span>
+                    {b}→{a}: <span className="font-semibold text-primary">{formatRate(computeRate(b, a, row.marketPrice, effectiveMargin))}</span>
                   </div>
                   <button
                     onClick={async () => {
@@ -317,6 +340,48 @@ export default function AdminPage() {
                   >
                     {saving === key ? "جارٍ الحفظ…" : "حفظ"}
                   </button>
+                </div>
+
+                <div className="mt-3 flex items-end gap-3 border-t border-border pt-3">
+                  <label className="text-xs text-subtle">
+                    هامش خاص بهذا الزوج (فاضي = يستخدم العام {margin}%)
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder={String(margin)}
+                      value={marginInputValue}
+                      onChange={(e) =>
+                        setMarginInputs((prev) => ({ ...prev, [key]: e.target.value }))
+                      }
+                      className="mt-1 w-28 rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                    />
+                  </label>
+                  <button
+                    onClick={async () => {
+                      setSaving(`${key}_margin`);
+                      setSaveError(null);
+                      try {
+                        const raw = marginInputs[key];
+                        const percent = raw === undefined || raw.trim() === "" ? null : parseFloat(raw);
+                        await setPairMargin(a, b, percent);
+                        setRates(await getRates());
+                        setMarginInputs((prev) => {
+                          const next = { ...prev };
+                          delete next[key];
+                          return next;
+                        });
+                      } catch (err) {
+                        setSaveError(err instanceof Error ? err.message : String(err));
+                      }
+                      setSaving(null);
+                    }}
+                    className="rounded-full border border-border px-4 py-2 text-xs font-semibold text-ink"
+                  >
+                    {saving === `${key}_margin` ? "جارٍ الحفظ…" : "حفظ الهامش"}
+                  </button>
+                  {row.marginOverride != null && (
+                    <span className="text-xs text-subtle">مخصص: {row.marginOverride}%</span>
+                  )}
                 </div>
 
                 {(a === "SDG" || b === "SDG") && row.sdgSource && (
