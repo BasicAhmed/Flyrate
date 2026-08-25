@@ -22,6 +22,8 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
 
   const rate = rates.find((r) => r.from === fromCode && r.to === toCurrency?.code);
 
+  const involvesSudan = fromCode === "SDG" || toCurrency?.code === "SDG";
+
   const amountNum = parseFloat(amount) || 0;
 
   // Each pair has one market price; whichever side is the "b→a" leg of the
@@ -147,6 +149,18 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                 className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-left font-mono text-lg text-ink focus:border-primary"
               />
             </label>
+
+            {involvesSudan && (
+              <div
+                className="mt-4 flex items-start gap-2.5 rounded-xl border border-primary/40 bg-primary/10 p-3.5 text-sm text-ink"
+                role="alert"
+              >
+                <span aria-hidden="true">⚠️</span>
+                <p>
+                  سعر الجنيه السوداني بيتقلب بشكل كبير الفترة دي — تأكد من السعر مع الإدارة قبل ما تأكد الطلب.
+                </p>
+              </div>
+            )}
 
             <div className="mt-6 space-y-3 rounded-2xl bg-surface2 p-5 font-mono text-sm">
               <div className="flex items-center justify-between" dir="ltr">
