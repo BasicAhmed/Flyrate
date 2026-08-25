@@ -20,9 +20,9 @@ export default async function Home() {
     <>
       <Nav />
       <Hero />
+      <Calculator rates={rates} />
       <RateTicker rates={rates} />
       <RatesTable rates={rates} />
-      <Calculator rates={rates} />
       <WhyChoose />
       <HowItWorks />
       <Reviews />
