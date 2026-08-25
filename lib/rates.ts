@@ -103,3 +103,45 @@ export async function setMarketPrice(from: CurrencyCode, to: CurrencyCode, marke
     updatedAt: serverTimestamp(),
   });
 }
+
+export interface FxUpdateResult {
+  updated: string[];
+  skipped: string[];
+}
+
+/** Client-side "update now" — same math as the daily cron
+ *  (app/api/cron/update-rates), but runs on demand from a logged-in admin
+ *  session, so it just uses the normal authenticated client SDK instead of
+ *  the service account. Pulls live USD rates via the same-origin /api/fx
+ *  relay (avoids browser CORS issues), then writes every non-SDG pair. */
+export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
+  const res = await fetch("/api/fx", { cache: "no-store" });
+  const data = await res.json();
+  if (!res.ok || !data.rates) {
+    throw new Error(data?.error ?? "تعذر جلب أسعار الصرف الحالية");
+  }
+  const usdRates = data.rates as Record<string, number>;
+  const rateFor = (code: CurrencyCode) => (code === "USDT" ? 1 : usdRates[code]);
+
+  const updated: string[] = [];
+  const skipped: string[] = [];
+
+  for (const { a, b } of PAIRS) {
+    const key = pairKey(a, b);
+    if (a === "SDG" || b === "SDG") {
+      skipped.push(key);
+      continue;
+    }
+    const rateA = rateFor(a);
+    const rateB = rateFor(b);
+    if (!rateA || !rateB) {
+      skipped.push(key);
+      continue;
+    }
+    const marketPrice = rateA / rateB;
+    await setMarketPrice(a, b, marketPrice);
+    updated.push(key);
+  }
+
+  return { updated, skipped };
+}

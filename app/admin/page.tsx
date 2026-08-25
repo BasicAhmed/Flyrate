@@ -8,7 +8,7 @@ import {
   type User,
 } from "firebase/auth";
 import { auth, firebaseEnabled } from "@/lib/firebase";
-import { getRates, setMarketPrice, computeRate, type RateRow } from "@/lib/rates";
+import { getRates, setMarketPrice, computeRate, updateRatesFromLiveFx, type RateRow } from "@/lib/rates";
 import { formatRate } from "@/lib/format";
 import { getMarginPercent, setMarginPercent, getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, getRecentSales, type SaleEntry } from "@/lib/sales";
@@ -34,6 +34,8 @@ export default function AdminPage() {
   const [rates, setRates] = useState<RateRow[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [fxUpdating, setFxUpdating] = useState(false);
+  const [fxMessage, setFxMessage] = useState<string | null>(null);
 
   const [saleDate, setSaleDate] = useState(todayStr());
   const [usdSold, setUsdSold] = useState("");
@@ -198,10 +200,38 @@ export default function AdminPage() {
 
       {/* Rates */}
       <div className="mt-6">
-        <h2 className="font-display text-base font-semibold text-ink">أسعار السوق</h2>
-        <p className="mt-1 text-xs text-subtle">
-          كل الأزواج ما عدا الجنيه السوداني تتحدث تلقائياً كل يوم من سعر الصرف الحقيقي — تقدر تعدلها يدوياً برضه وهتترجع تتحدث تلقائياً في الدورة الجاية. أزواج الجنيه السوداني يدوية بالكامل لأن سعرها متقلب.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display text-base font-semibold text-ink">أسعار السوق</h2>
+            <p className="mt-1 text-xs text-subtle">
+              كل الأزواج ما عدا الجنيه السوداني تتحدث تلقائياً كل يوم من سعر الصرف الحقيقي — تقدر تعدلها يدوياً برضه وهتترجع تتحدث تلقائياً في الدورة الجاية. أزواج الجنيه السوداني يدوية بالكامل لأن سعرها متقلب.
+            </p>
+          </div>
+          <button
+            onClick={async () => {
+              setFxUpdating(true);
+              setFxMessage(null);
+              try {
+                const { updated } = await updateRatesFromLiveFx();
+                setRates(await getRates());
+                setFxMessage(`✅ تم تحديث ${updated.length} زوج بأسعار السوق الحالية`);
+              } catch (err) {
+                setFxMessage(`❌ ${err instanceof Error ? err.message : String(err)}`);
+              }
+              setFxUpdating(false);
+            }}
+            disabled={fxUpdating}
+            className="shrink-0 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg disabled:opacity-60"
+          >
+            {fxUpdating ? "جارٍ التحديث…" : "🔄 تحديث الأسعار الآن"}
+          </button>
+        </div>
+
+        {fxMessage && (
+          <div className="mt-3 rounded-lg border border-border bg-surface2 p-3 text-sm text-ink">
+            {fxMessage}
+          </div>
+        )}
 
         {saveError && (
           <div className="mt-3 rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm text-primary">
