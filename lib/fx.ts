@@ -17,7 +17,7 @@ async function fetchUsdBaseRates(): Promise<Record<string, number>> {
  *  checks manually. If Binance changes this endpoint or has no SDG ads,
  *  this throws and SDG pairs are simply skipped for that run — whatever
  *  price is already stored stays in place. */
-async function fetchSdgPerUsdt(): Promise<number> {
+async function fetchSdgPerUsdt(): Promise<{ avg: number; prices: number[] }> {
   const res = await fetch(BINANCE_P2P_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -43,21 +43,26 @@ async function fetchSdgPerUsdt(): Promise<number> {
     .map((item: any) => parseFloat(item?.adv?.price))
     .filter((n: number) => !Number.isNaN(n));
   if (prices.length === 0) throw new Error("تعذر قراءة أسعار Binance P2P");
-  return prices.reduce((sum: number, p: number) => sum + p, 0) / prices.length;
+  const avg = prices.reduce((sum: number, p: number) => sum + p, 0) / prices.length;
+  return { avg, prices };
 }
 
 /** Units of each currency per 1 USD, combining both sources. SDG comes from
  *  Binance P2P (see above) instead of the normal FX API, since regular FX
  *  data doesn't track Sudan's real/black-market rate. Every other pair uses
- *  this the exact same way: marketPrice(a,b) = rates[a] / rates[b]. */
+ *  this the exact same way: marketPrice(a,b) = rates[a] / rates[b].
+ *  sdgDetail is returned too so callers can show/store exactly which
+ *  USDT/SDG price was used (the average) and which 4 offers fed it. */
 export async function fetchCombinedUsdRates(): Promise<{
   rates: Record<string, number>;
+  sdgDetail?: { usdtToSdg: number; prices: number[] };
   sdgError?: string;
 }> {
   const rates = await fetchUsdBaseRates();
   try {
-    rates.SDG = await fetchSdgPerUsdt();
-    return { rates };
+    const { avg, prices } = await fetchSdgPerUsdt();
+    rates.SDG = avg;
+    return { rates, sdgDetail: { usdtToSdg: avg, prices } };
   } catch (err) {
     return { rates, sdgError: err instanceof Error ? err.message : String(err) };
   }

@@ -305,7 +305,7 @@ export default function AdminPage() {
                       setSaving(key);
                       setSaveError(null);
                       try {
-                        await setMarketPrice(a, b, row.marketPrice);
+                        await setMarketPrice(a, b, row.marketPrice, row.sdgSource);
                       } catch (err) {
                         setSaveError(err instanceof Error ? err.message : String(err));
                       }
@@ -316,6 +316,13 @@ export default function AdminPage() {
                     {saving === key ? "جارٍ الحفظ…" : "حفظ"}
                   </button>
                 </div>
+
+                {(a === "SDG" || b === "SDG") && row.sdgSource && (
+                  <p className="mt-2 text-xs text-subtle">
+                    سعر USDT→SDG المستخدم: <span className="font-semibold text-ink">{row.sdgSource.usdtToSdg.toFixed(2)}</span>
+                    {" "}(متوسط {row.sdgSource.prices.length} عروض Binance P2P: {row.sdgSource.prices.map((p) => p.toFixed(2)).join(", ")})
+                  </p>
+                )}
               </div>
             );
           })}

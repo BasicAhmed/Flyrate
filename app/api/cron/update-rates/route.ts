@@ -20,10 +20,12 @@ export async function GET(request: Request) {
 
   let usdRates: Record<string, number>;
   let sdgError: string | undefined;
+  let sdgDetail: { usdtToSdg: number; prices: number[] } | undefined;
   try {
     const result = await fetchCombinedUsdRates();
     usdRates = result.rates;
     sdgError = result.sdgError;
+    sdgDetail = result.sdgDetail;
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -59,11 +61,14 @@ export async function GET(request: Request) {
         marketPrice,
         updatedAt: new Date(),
         source: involvesSdg ? "auto-fx-binance-p2p" : "auto-fx",
+        ...(involvesSdg && sdgDetail
+          ? { sdgUsdtToSdg: sdgDetail.usdtToSdg, sdgPrices: sdgDetail.prices }
+          : {}),
       },
       { merge: true }
     );
     updated.push({ pair: key, marketPrice });
   }
 
-  return NextResponse.json({ ok: true, at: new Date().toISOString(), updated, skipped, sdgError });
+  return NextResponse.json({ ok: true, at: new Date().toISOString(), updated, skipped, sdgError, sdgDetail });
 }

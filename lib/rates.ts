@@ -5,12 +5,20 @@ import { getMarginPercent } from "./settings";
 import { roundForDisplay } from "./format";
 import seed from "@/data/rates.seed.json";
 
+/** For SDG pairs only: the raw USDT/SDG data the marketPrice was derived
+ *  from, so it can be shown in /admin for verification. */
+export interface SdgSourceDetail {
+  usdtToSdg: number; // the average used
+  prices: number[]; // the individual Binance P2P offers averaged
+}
+
 export interface RateRow {
   from: CurrencyCode;
   to: CurrencyCode;
   marketPrice: number; // the pair's single true cross-rate, quoted a-per-b
   rate: number; // marketPrice adjusted by the profit margin — what customers see/get
   updatedAt: string | null;
+  sdgSource?: SdgSourceDetail;
 }
 
 /** Applies FlyRate's margin to a pair's single market price to get the
@@ -37,11 +45,12 @@ function rowsForPair(
   to: CurrencyCode,
   marketPrice: number,
   marginPercent: number,
-  updatedAt: string | null
+  updatedAt: string | null,
+  sdgSource?: SdgSourceDetail
 ): RateRow[] {
   return [
-    { from, to, marketPrice, rate: computeRate(from, to, marketPrice, marginPercent), updatedAt },
-    { from: to, to: from, marketPrice, rate: computeRate(to, from, marketPrice, marginPercent), updatedAt },
+    { from, to, marketPrice, rate: computeRate(from, to, marketPrice, marginPercent), updatedAt, sdgSource },
+    { from: to, to: from, marketPrice, rate: computeRate(to, from, marketPrice, marginPercent), updatedAt, sdgSource },
   ];
 }
 
@@ -64,12 +73,19 @@ export async function getRates(): Promise<RateRow[]> {
     const snap = await getDocs(collection(db, "rates"));
     if (snap.empty) return seedRows(marginPercent);
 
-    const map = new Map<string, { marketPrice: number; updatedAt: string | null }>();
+    const map = new Map<
+      string,
+      { marketPrice: number; updatedAt: string | null; sdgSource?: SdgSourceDetail }
+    >();
     snap.forEach((d) => {
       const data = d.data();
       map.set(d.id, {
         marketPrice: data.marketPrice,
         updatedAt: data.updatedAt?.toDate?.().toISOString?.() ?? null,
+        sdgSource:
+          typeof data.sdgUsdtToSdg === "number" && Array.isArray(data.sdgPrices)
+            ? { usdtToSdg: data.sdgUsdtToSdg, prices: data.sdgPrices }
+            : undefined,
       });
     });
 
@@ -81,7 +97,7 @@ export async function getRates(): Promise<RateRow[]> {
       const key = pairKey(a, b);
       const entry = map.get(key);
       const marketPrice = entry?.marketPrice ?? fallback.get(key)!;
-      return rowsForPair(a, b, marketPrice, marginPercent, entry?.updatedAt ?? null);
+      return rowsForPair(a, b, marketPrice, marginPercent, entry?.updatedAt ?? null, entry?.sdgSource);
     });
   } catch {
     return seedRows(marginPercent);
@@ -90,8 +106,15 @@ export async function getRates(): Promise<RateRow[]> {
 
 /** Writes one PAIR's market price (not a direction — a pair has exactly one).
  *  Called from the /admin panel only. Pass either side's currencies; it
- *  always resolves and stores under the pair's canonical key. */
-export async function setMarketPrice(from: CurrencyCode, to: CurrencyCode, marketPrice: number) {
+ *  always resolves and stores under the pair's canonical key. `sdgSource`
+ *  is only meaningful for SDG pairs — stores the raw Binance P2P data the
+ *  price came from, so /admin can show exactly what was used. */
+export async function setMarketPrice(
+  from: CurrencyCode,
+  to: CurrencyCode,
+  marketPrice: number,
+  sdgSource?: SdgSourceDetail
+) {
   if (!firebaseEnabled || !db) {
     throw new Error("Firebase is not configured — see .env.example.");
   }
@@ -101,6 +124,7 @@ export async function setMarketPrice(from: CurrencyCode, to: CurrencyCode, marke
     to,
     marketPrice,
     updatedAt: serverTimestamp(),
+    ...(sdgSource ? { sdgUsdtToSdg: sdgSource.usdtToSdg, sdgPrices: sdgSource.prices } : {}),
   });
 }
 
@@ -114,7 +138,7 @@ export interface FxUpdateResult {
  *  session using the normal authenticated client SDK instead of the service
  *  account. Pulls live rates via the same-origin /api/fx relay (avoids
  *  browser CORS issues) — that includes SDG via Binance P2P now, so every
- *  pair updates the same way, no special-casing needed here. */
+ *  pair updates the same way; the raw SDG offers get stored too. */
 export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   const res = await fetch("/api/fx", { cache: "no-store" });
   const data = await res.json();
@@ -122,6 +146,9 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
     throw new Error(data?.error ?? "تعذر جلب أسعار الصرف الحالية");
   }
   const usdRates = data.rates as Record<string, number>;
+  const sdgSource: SdgSourceDetail | undefined = data.sdgDetail
+    ? { usdtToSdg: data.sdgDetail.usdtToSdg, prices: data.sdgDetail.prices }
+    : undefined;
   const rateFor = (code: CurrencyCode) => (code === "USDT" ? 1 : usdRates[code]);
 
   const updated: string[] = [];
@@ -136,7 +163,8 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
       continue;
     }
     const marketPrice = rateA / rateB;
-    await setMarketPrice(a, b, marketPrice);
+    const involvesSdg = a === "SDG" || b === "SDG";
+    await setMarketPrice(a, b, marketPrice, involvesSdg ? sdgSource : undefined);
     updated.push(key);
   }
 
