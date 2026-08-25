@@ -200,7 +200,7 @@ export default function AdminPage() {
       <div className="mt-6">
         <h2 className="font-display text-base font-semibold text-ink">أسعار السوق</h2>
         <p className="mt-1 text-xs text-subtle">
-          أدخل سعر السوق فقط — السعر النهائي المعروض للعملاء يُحسب تلقائياً بإضافة الهامش.
+          كل الأزواج ما عدا الجنيه السوداني تتحدث تلقائياً كل ١٢ ساعة من سعر الصرف الحقيقي — تقدر تعدلها يدوياً برضه وهتترجع تتحدث تلقائياً في الدورة الجاية. أزواج الجنيه السوداني يدوية بالكامل لأن سعرها متقلب.
         </p>
 
         {saveError && (
@@ -234,7 +234,9 @@ export default function AdminPage() {
                   <span>
                     {fromC.flag} {a} ⇄ {toC.flag} {b}
                   </span>
-                  <span className="text-xs text-subtle">سعر سوق واحد للاتجاهين</span>
+                  <span className="text-xs text-subtle">
+                    {a === "SDG" || b === "SDG" ? "يدوي" : "🔄 تلقائي كل ١٢ ساعة"}
+                  </span>
                 </div>
                 <div className="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-3">
                   <label className="text-xs text-subtle">
