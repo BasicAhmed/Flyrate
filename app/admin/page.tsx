@@ -204,7 +204,7 @@ export default function AdminPage() {
           <div>
             <h2 className="font-display text-base font-semibold text-ink">أسعار السوق</h2>
             <p className="mt-1 text-xs text-subtle">
-              كل الأزواج ما عدا الجنيه السوداني تتحدث تلقائياً كل يوم من سعر الصرف الحقيقي — تقدر تعدلها يدوياً برضه وهتترجع تتحدث تلقائياً في الدورة الجاية. أزواج الجنيه السوداني يدوية بالكامل لأن سعرها متقلب.
+              كل الأزواج تتحدث تلقائياً كل يوم — الأزواج العادية من سعر الصرف الحقيقي، وأزواج الجنيه السوداني من متوسط أول 4 عروض شراء USDT/SDG على Binance P2P (لتقلبه الكبير). تقدر تعدل أي سعر يدوياً برضه وهيترجع يتحدث تلقائياً في الدورة الجاية.
             </p>
           </div>
           <button
@@ -212,9 +212,13 @@ export default function AdminPage() {
               setFxUpdating(true);
               setFxMessage(null);
               try {
-                const { updated } = await updateRatesFromLiveFx();
+                const { updated, skipped } = await updateRatesFromLiveFx();
                 setRates(await getRates());
-                setFxMessage(`✅ تم تحديث ${updated.length} زوج بأسعار السوق الحالية`);
+                let msg = `✅ تم تحديث ${updated.length} زوج بأسعار السوق الحالية`;
+                if (skipped.length > 0) {
+                  msg += ` — تعذر تحديث: ${skipped.join(", ")}`;
+                }
+                setFxMessage(msg);
               } catch (err) {
                 setFxMessage(`❌ ${err instanceof Error ? err.message : String(err)}`);
               }
@@ -265,7 +269,7 @@ export default function AdminPage() {
                     {fromC.flag} {a} ⇄ {toC.flag} {b}
                   </span>
                   <span className="text-xs text-subtle">
-                    {a === "SDG" || b === "SDG" ? "يدوي" : "🔄 تلقائي يومياً"}
+                    {a === "SDG" || b === "SDG" ? "🔄 تلقائي يومياً (Binance P2P)" : "🔄 تلقائي يومياً"}
                   </span>
                 </div>
                 <div className="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-3">

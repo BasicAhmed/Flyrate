@@ -109,11 +109,12 @@ export interface FxUpdateResult {
   skipped: string[];
 }
 
-/** Client-side "update now" — same math as the daily cron
+/** Client-side "update now" — same math and same sources as the daily cron
  *  (app/api/cron/update-rates), but runs on demand from a logged-in admin
- *  session, so it just uses the normal authenticated client SDK instead of
- *  the service account. Pulls live USD rates via the same-origin /api/fx
- *  relay (avoids browser CORS issues), then writes every non-SDG pair. */
+ *  session using the normal authenticated client SDK instead of the service
+ *  account. Pulls live rates via the same-origin /api/fx relay (avoids
+ *  browser CORS issues) — that includes SDG via Binance P2P now, so every
+ *  pair updates the same way, no special-casing needed here. */
 export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   const res = await fetch("/api/fx", { cache: "no-store" });
   const data = await res.json();
@@ -128,10 +129,6 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
 
   for (const { a, b } of PAIRS) {
     const key = pairKey(a, b);
-    if (a === "SDG" || b === "SDG") {
-      skipped.push(key);
-      continue;
-    }
     const rateA = rateFor(a);
     const rateB = rateFor(b);
     if (!rateA || !rateB) {
