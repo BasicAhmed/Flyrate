@@ -337,7 +337,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                     </span>
                     {trend && (
                       <span className={`text-xs ${trend === "good" ? "text-emerald-500" : "text-red-500"}`}>
-                        {trend === "good" ? "▲ في صالحك" : "▼ اتراجع شوية"}
+                        {trend === "good" ? "▲ زيادة" : "▼ انخفاض"}
                       </span>
                     )}
                   </motion.div>
