@@ -13,16 +13,16 @@ interface Props {
 export default function RateHistoryChart({ points, label }: Props) {
   if (points.length < 2) {
     return (
-      <div className="mt-4 rounded-xl border border-border bg-surface2 p-4 text-center text-xs text-subtle">
+      <div className="mt-2 rounded-xl border border-border bg-surface2 p-3 text-center text-xs text-subtle">
         مفيش بيانات كافية لعرض السعر التاريخي لـ {label} لسه
       </div>
     );
   }
 
   const width = 320;
-  const height = 88;
+  const height = 64;
   const padX = 4;
-  const padY = 10;
+  const padY = 8;
 
   const values = points.map((p) => p.marketPrice);
   const min = Math.min(...values);
@@ -42,8 +42,8 @@ export default function RateHistoryChart({ points, label }: Props) {
   const changePct = ((last.marketPrice - first.marketPrice) / first.marketPrice) * 100;
 
   return (
-    <div className="mt-4 rounded-xl border border-border bg-surface2 p-4" dir="ltr">
-      <div className="mb-2 flex items-center justify-between text-xs text-subtle">
+    <div className="mt-2 rounded-xl border border-border bg-surface2 p-3" dir="ltr">
+      <div className="mb-1.5 flex items-center justify-between text-xs text-subtle">
         <span>{label} — آخر {points.length} يوم</span>
         <span className={trendUp ? "text-primary" : "text-ink"}>
           {changePct >= 0 ? "▲" : "▼"} {Math.abs(changePct).toFixed(1)}%
