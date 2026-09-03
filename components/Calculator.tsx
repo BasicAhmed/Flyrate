@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, MessageCircle } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, ArrowUpDown, MessageCircle } from "lucide-react";
 import { FROM_CURRENCIES, validToCurrencies, CURRENCIES, isMultiplyCorridor, type CurrencyCode } from "@/lib/corridors";
 import { formatRate } from "@/lib/format";
 import type { RateRow } from "@/lib/rates";
@@ -10,6 +11,19 @@ import { buildOrderMessage, whatsappLink } from "@/lib/whatsapp";
 import RateHistoryChart from "./RateHistoryChart";
 
 type Mode = "send" | "receive";
+
+// Convenience tap-to-fill amounts, roughly scaled to how students actually
+// send each currency (a few hundred SAR vs hundreds of thousands SDG).
+const QUICK_AMOUNTS: Record<CurrencyCode, number[]> = {
+  SDG: [50000, 100000, 300000],
+  ZAR: [500, 1000, 5000],
+  EGP: [1000, 5000, 10000],
+  MYR: [200, 500, 2000],
+  SAR: [200, 500, 2000],
+  QAR: [200, 500, 2000],
+  AED: [200, 500, 2000],
+  USDT: [50, 100, 500],
+};
 
 export default function Calculator({ rates }: { rates: RateRow[] }) {
   const [mode, setMode] = useState<Mode>("send");
@@ -27,11 +41,16 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
   const involvesSudan = fromCode === "SDG" || toCurrency?.code === "SDG";
 
   const [history, setHistory] = useState<RateHistoryPoint[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
   useEffect(() => {
     if (!toCurrency) return;
     let cancelled = false;
+    setHistoryLoading(true);
     getRateHistory(fromCode, toCurrency.code, 30).then((points) => {
-      if (!cancelled) setHistory(points);
+      if (!cancelled) {
+        setHistory(points);
+        setHistoryLoading(false);
+      }
     });
     return () => {
       cancelled = true;
@@ -63,10 +82,21 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
         : amountNum / rate.rate
       : 0;
 
+  const activeCurrency = mode === "send" ? fromCurrency : toCurrency;
+  const quickAmounts = activeCurrency ? QUICK_AMOUNTS[activeCurrency.code] : [];
+
   function handleFromChange(code: CurrencyCode) {
     setFromCode(code);
     const next = validToCurrencies(code);
     setToCode(next[0]?.code);
+  }
+
+  function swapCurrencies() {
+    if (!toCurrency) return;
+    const newFrom = toCurrency.code;
+    const newTo = fromCode;
+    setFromCode(newFrom);
+    setToCode(newTo);
   }
 
   function orderNow() {
@@ -112,39 +142,58 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
               </button>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
               <label className="block">
                 <span className="mb-1.5 block text-xs font-medium text-subtle">
                   من عملة
                 </span>
-                <select
-                  value={fromCode}
-                  onChange={(e) => handleFromChange(e.target.value as CurrencyCode)}
-                  className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-sm text-ink focus:border-primary"
-                >
-                  {FROM_CURRENCIES.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.flag} {c.name} ({c.code})
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-lg">
+                    {fromCurrency.flag}
+                  </span>
+                  <select
+                    value={fromCode}
+                    onChange={(e) => handleFromChange(e.target.value as CurrencyCode)}
+                    className="w-full appearance-none rounded-xl border border-border bg-surface2 py-3 pl-3.5 pr-10 text-sm font-medium text-ink focus:border-primary"
+                  >
+                    {FROM_CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.name} ({c.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </label>
+
+              <button
+                onClick={swapCurrencies}
+                aria-label="بدّل العملتين"
+                title="بدّل العملتين"
+                className="mb-0.5 flex size-10 shrink-0 items-center justify-center rounded-full border border-border bg-surface2 text-muted transition-colors hover:border-primary hover:text-primary"
+              >
+                <ArrowUpDown size={16} />
+              </button>
 
               <label className="block">
                 <span className="mb-1.5 block text-xs font-medium text-subtle">
                   إلى عملة
                 </span>
-                <select
-                  value={toCurrency?.code}
-                  onChange={(e) => setToCode(e.target.value as CurrencyCode)}
-                  className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-sm text-ink focus:border-primary"
-                >
-                  {currentToOptions.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.flag} {c.name} ({c.code})
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-lg">
+                    {toCurrency?.flag}
+                  </span>
+                  <select
+                    value={toCurrency?.code}
+                    onChange={(e) => setToCode(e.target.value as CurrencyCode)}
+                    className="w-full appearance-none rounded-xl border border-border bg-surface2 py-3 pl-3.5 pr-10 text-sm font-medium text-ink focus:border-primary"
+                  >
+                    {currentToOptions.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.name} ({c.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </label>
             </div>
 
@@ -160,9 +209,27 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 dir="ltr"
-                className="w-full rounded-lg border border-border bg-surface2 px-3.5 py-3 text-left font-mono text-lg text-ink focus:border-primary"
+                className="w-full rounded-xl border border-border bg-surface2 px-3.5 py-3 text-left font-mono text-lg text-ink focus:border-primary"
               />
             </label>
+
+            {quickAmounts.length > 0 && (
+              <div className="mt-2.5 flex gap-2" dir="ltr">
+                {quickAmounts.map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => setAmount(String(q))}
+                    className={`rounded-full border px-3 py-1.5 font-mono text-xs transition-colors ${
+                      amountNum === q
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted hover:border-primary hover:text-primary"
+                    }`}
+                  >
+                    {q.toLocaleString("en-US")}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {involvesSudan && (
               <div
@@ -176,28 +243,36 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
               </div>
             )}
 
-            <div className="mt-6 space-y-3 rounded-2xl bg-surface2 p-5 font-mono text-sm">
-              <div className="flex items-center justify-between" dir="ltr">
-                <span className={mode === "send" ? "text-primary font-semibold" : "text-ink"}>
-                  {amountSent.toLocaleString("en-US", { maximumFractionDigits: 2 })} {fromCurrency.code}
-                </span>
-                <span className="text-subtle">المبلغ المُرسل</span>
-              </div>
-              <div className="flex items-center justify-between" dir="ltr">
-                <span className="text-ink">{rate ? formatRate(rate.rate) : "—"}</span>
-                <span className="text-subtle">سعر الصرف</span>
-              </div>
-              <div className="flex items-center justify-between border-t border-border pt-3 text-base" dir="ltr">
-                <span className={mode === "receive" ? "font-semibold text-primary" : "font-semibold text-ink"}>
+            {rate && toCurrency && (
+              <p className="mt-5 text-center font-mono text-xs text-subtle" dir="ltr">
+                {usesMultiply
+                  ? `1 ${fromCurrency.code} = ${formatRate(rate.rate)} ${toCurrency.code}`
+                  : `1 ${toCurrency.code} = ${formatRate(rate.rate)} ${fromCurrency.code}`}
+              </p>
+            )}
+
+            <div className="mt-2 rounded-2xl border border-primary/20 bg-primary/5 p-5 text-center">
+              <p className="text-xs font-medium text-subtle">المستلم يستلم</p>
+              <AnimatePresence mode="wait">
+                <motion.p
+                  key={`${amountReceived}-${toCurrency?.code}`}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="mt-1 font-mono text-3xl font-bold text-primary sm:text-4xl"
+                  dir="ltr"
+                >
                   {rate
                     ? `${amountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${toCurrency.code}`
                     : "اختر ممر التحويل"}
-                </span>
-                <span className="font-medium text-muted">المستلم يستلم</span>
-              </div>
+                </motion.p>
+              </AnimatePresence>
+              <p className="mt-2 font-mono text-sm text-muted" dir="ltr">
+                مقابل {amountSent.toLocaleString("en-US", { maximumFractionDigits: 2 })} {fromCurrency.code}
+              </p>
             </div>
 
-            {toCurrency && (
+            {toCurrency && !historyLoading && (
               <RateHistoryChart points={history} label={`${fromCurrency.code} ⇄ ${toCurrency.code}`} />
             )}
 
