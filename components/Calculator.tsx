@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowUpDown, MessageCircle } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, MessageCircle } from "lucide-react";
 import { FROM_CURRENCIES, validToCurrencies, CURRENCIES, isMultiplyCorridor, type CurrencyCode } from "@/lib/corridors";
 import { formatRate } from "@/lib/format";
 import type { RateRow } from "@/lib/rates";
@@ -31,6 +31,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
   const toOptions = useMemo(() => validToCurrencies(fromCode), [fromCode]);
   const [toCode, setToCode] = useState<CurrencyCode>(toOptions[0]?.code);
   const [amount, setAmount] = useState("1000");
+  const [swapCount, setSwapCount] = useState(0);
 
   const currentToOptions = useMemo(() => validToCurrencies(fromCode), [fromCode]);
   const toCurrency = currentToOptions.find((c) => c.code === toCode) ?? currentToOptions[0];
@@ -97,6 +98,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
     const newTo = fromCode;
     setFromCode(newFrom);
     setToCode(newTo);
+    setSwapCount((n) => n + 1);
   }
 
   function orderNow() {
@@ -122,24 +124,34 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
             </p>
           </div>
 
-          <div className="rounded-3xl border border-border bg-surface p-6 sm:p-8">
-            <div className="mb-5 grid grid-cols-2 gap-2 rounded-full border border-border bg-surface2 p-1">
-              <button
-                onClick={() => setMode("send")}
-                className={`rounded-full py-2 text-sm font-semibold transition-colors ${
-                  mode === "send" ? "bg-primary text-bg" : "text-muted"
-                }`}
-              >
-                عندي مبلغ محدد أرسله
-              </button>
-              <button
-                onClick={() => setMode("receive")}
-                className={`rounded-full py-2 text-sm font-semibold transition-colors ${
-                  mode === "receive" ? "bg-primary text-bg" : "text-muted"
-                }`}
-              >
-                عاوز يوصل مبلغ محدد
-              </button>
+          <div className="relative">
+            <div
+              aria-hidden="true"
+              className="absolute -inset-6 -z-10 rounded-[2.5rem] bg-primary/10 blur-3xl"
+            />
+            <div className="rounded-3xl border border-border bg-surface p-6 sm:p-8">
+            <div className="mb-5 grid grid-cols-2 gap-1 rounded-full border border-border bg-surface2 p-1">
+              {(
+                [
+                  ["send", "عندي مبلغ محدد أرسله"],
+                  ["receive", "عاوز يوصل مبلغ محدد"],
+                ] as const
+              ).map(([value, text]) => (
+                <button
+                  key={value}
+                  onClick={() => setMode(value)}
+                  className="relative rounded-full py-2 text-sm font-semibold transition-colors"
+                >
+                  {mode === value && (
+                    <motion.span
+                      layoutId="mode-pill"
+                      transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                      className="absolute inset-0 rounded-full bg-primary"
+                    />
+                  )}
+                  <span className={`relative ${mode === value ? "text-bg" : "text-muted"}`}>{text}</span>
+                </button>
+              ))}
             </div>
 
             <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
@@ -165,14 +177,17 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                 </div>
               </label>
 
-              <button
+              <motion.button
                 onClick={swapCurrencies}
+                animate={{ rotate: swapCount * 180 }}
+                whileTap={{ scale: 0.85 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
                 aria-label="بدّل العملتين"
                 title="بدّل العملتين"
                 className="mb-0.5 flex size-10 shrink-0 items-center justify-center rounded-full border border-border bg-surface2 text-muted transition-colors hover:border-primary hover:text-primary"
               >
-                <ArrowUpDown size={16} />
-              </button>
+                <ArrowLeftRight size={16} />
+              </motion.button>
 
               <label className="block">
                 <span className="mb-1.5 block text-xs font-medium text-subtle">
@@ -276,13 +291,15 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
               <RateHistoryChart points={history} label={`${fromCurrency.code} ⇄ ${toCurrency.code}`} />
             )}
 
-            <button
+            <motion.button
               onClick={orderNow}
               disabled={!rate || amountNum <= 0}
+              whileTap={{ scale: 0.98 }}
               className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-4 text-sm font-semibold text-bg transition-transform hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <MessageCircle size={16} /> اطلب الآن عبر واتساب <ArrowLeft size={16} />
-            </button>
+            </motion.button>
+            </div>
           </div>
         </div>
       </div>
