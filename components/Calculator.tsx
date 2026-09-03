@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowLeftRight, ChevronDown, MessageCircle, Share2, Check } 
 import { FROM_CURRENCIES, validToCurrencies, CURRENCIES, isMultiplyCorridor, type CurrencyCode } from "@/lib/corridors";
 import { formatRate } from "@/lib/format";
 import { formatRelativeTime } from "@/lib/relativeTime";
+import { createShareCardBlob } from "@/lib/shareCard";
 import type { RateRow } from "@/lib/rates";
 import { getRateHistory, type RateHistoryPoint } from "@/lib/rateHistory";
 import { buildOrderMessage, whatsappLink } from "@/lib/whatsapp";
@@ -35,6 +36,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
   const [swapCount, setSwapCount] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
   const [shared, setShared] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const currentToOptions = useMemo(() => validToCurrencies(fromCode), [fromCode]);
   const toCurrency = currentToOptions.find((c) => c.code === toCode) ?? currentToOptions[0];
@@ -131,25 +133,72 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
 
   async function shareResult() {
     if (!rate || !toCurrency) return;
-    const text = [
-      `FlyRate — ${fromCurrency.code} ⇄ ${toCurrency.code}`,
-      `${amountSent.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${fromCurrency.code} = ${amountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${toCurrency.code}`,
-    ].join("\n");
-    if (navigator.share) {
-      try {
-        await navigator.share({ text });
-      } catch {
-        // user cancelled the share sheet — no-op
-      }
-      return;
-    }
+    setSharing(true);
     try {
-      await navigator.clipboard.writeText(text);
-      setShared(true);
-      setTimeout(() => setShared(false), 1800);
+      const rateLine = usesMultiply
+        ? `1 ${fromCurrency.code} = ${formatRate(rate.rate)} ${toCurrency.code}`
+        : `1 ${toCurrency.code} = ${formatRate(rate.rate)} ${fromCurrency.code}`;
+      const trendLabel = trend === "good" ? "▲ زيادة" : trend === "bad" ? "▼ انخفاض" : undefined;
+      const updatedCaption = rate.updatedAt
+        ? `آخر تحديث للسعر: ${formatRelativeTime(rate.updatedAt)}`
+        : undefined;
+
+      const blob = await createShareCardBlob({
+        fromFlag: fromCurrency.flag,
+        fromCode: fromCurrency.code,
+        toFlag: toCurrency.flag,
+        toCode: toCurrency.code,
+        amountSent: amountSent.toLocaleString("en-US", { maximumFractionDigits: 2 }),
+        amountReceived: amountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 }),
+        rateLine,
+        trendLabel,
+        trendColor: trend ?? "neutral",
+        updatedCaption,
+      });
+
+      if (!blob) throw new Error("canvas unsupported");
+
+      const file = new File([blob], "flyrate-quote.png", { type: "image/png" });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: "FlyRate" });
+        } catch {
+          // user cancelled the share sheet — no-op
+        }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "flyrate-quote.png";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        setShared(true);
+        setTimeout(() => setShared(false), 1800);
+      }
     } catch {
-      // clipboard unavailable — nothing more we can do
+      // canvas/share unavailable — fall back to a plain text share/copy
+      const text = [
+        `FlyRate — ${fromCurrency.code} ⇄ ${toCurrency.code}`,
+        `${amountSent.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${fromCurrency.code} = ${amountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${toCurrency.code}`,
+      ].join("\n");
+      if (navigator.share) {
+        try {
+          await navigator.share({ text });
+        } catch {
+          // user cancelled — no-op
+        }
+      } else {
+        try {
+          await navigator.clipboard.writeText(text);
+          setShared(true);
+          setTimeout(() => setShared(false), 1800);
+        } catch {
+          // clipboard unavailable — nothing more we can do
+        }
+      }
     }
+    setSharing(false);
   }
 
   return (
@@ -356,11 +405,24 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                   {rate && (
                     <button
                       onClick={shareResult}
-                      aria-label="مشاركة النتيجة"
-                      title="مشاركة النتيجة"
-                      className="text-subtle transition-colors hover:text-primary"
+                      disabled={sharing}
+                      aria-label="مشاركة النتيجة كصورة"
+                      title="مشاركة النتيجة كصورة"
+                      className="text-subtle transition-colors hover:text-primary disabled:opacity-50"
                     >
-                      {shared ? <Check size={13} className="text-primary" /> : <Share2 size={13} />}
+                      {sharing ? (
+                        <motion.span
+                          animate={{ rotate: 360 }}
+                          transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+                          className="block"
+                        >
+                          <Share2 size={13} />
+                        </motion.span>
+                      ) : shared ? (
+                        <Check size={13} className="text-primary" />
+                      ) : (
+                        <Share2 size={13} />
+                      )}
                     </button>
                   )}
                 </div>
