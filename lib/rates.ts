@@ -205,7 +205,7 @@ export async function setPairMargin(from: CurrencyCode, to: CurrencyCode, percen
 }
 
 export interface FxUpdateResult {
-  updated: string[];
+  updated: { from: CurrencyCode; to: CurrencyCode; marketPrice: number; sdgSource?: SdgSourceDetail }[];
   skipped: string[];
 }
 
@@ -215,7 +215,9 @@ export interface FxUpdateResult {
  *  account. Pulls live rates via the same-origin /api/fx relay (avoids
  *  browser CORS issues) — that includes SDG via Binance P2P now, so every
  *  pair updates the same way; the raw SDG offers get stored too. Only
- *  touches market prices, never margin overrides. */
+ *  touches market prices, never margin overrides. Returns each updated
+ *  pair's new marketPrice/sdgSource so the caller can patch its own state
+ *  directly instead of re-fetching the whole collection afterward. */
 export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   const res = await fetch("/api/fx", { cache: "no-store" });
   const data = await res.json();
@@ -228,7 +230,7 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
     : undefined;
   const rateFor = (code: CurrencyCode) => (code === "USDT" ? 1 : usdRates[code]);
 
-  const updated: string[] = [];
+  const updated: FxUpdateResult["updated"] = [];
   const skipped: string[] = [];
 
   const jobs = PAIRS.map(async ({ a, b }) => {
@@ -241,11 +243,12 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
     }
     const marketPrice = rateA / rateB;
     const involvesSdg = a === "SDG" || b === "SDG";
+    const pairSdgSource = involvesSdg ? sdgSource : undefined;
     await Promise.all([
-      setMarketPrice(a, b, marketPrice, involvesSdg ? sdgSource : undefined),
+      setMarketPrice(a, b, marketPrice, pairSdgSource),
       appendRateHistory(a, b, marketPrice),
     ]);
-    updated.push(key);
+    updated.push({ from: a, to: b, marketPrice, sdgSource: pairSdgSource });
   });
 
   await Promise.all(jobs);

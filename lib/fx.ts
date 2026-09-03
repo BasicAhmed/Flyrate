@@ -58,12 +58,19 @@ export async function fetchCombinedUsdRates(): Promise<{
   sdgDetail?: { usdtToSdg: number; prices: number[] };
   sdgError?: string;
 }> {
-  const rates = await fetchUsdBaseRates();
-  try {
-    const { avg, prices } = await fetchSdgPerUsdt();
-    rates.SDG = avg;
-    return { rates, sdgDetail: { usdtToSdg: avg, prices } };
-  } catch (err) {
-    return { rates, sdgError: err instanceof Error ? err.message : String(err) };
+  const [baseResult, sdgResult] = await Promise.allSettled([fetchUsdBaseRates(), fetchSdgPerUsdt()]);
+
+  if (baseResult.status === "rejected") {
+    throw baseResult.reason;
   }
+  const rates = baseResult.value;
+
+  if (sdgResult.status === "fulfilled") {
+    rates.SDG = sdgResult.value.avg;
+    return { rates, sdgDetail: { usdtToSdg: sdgResult.value.avg, prices: sdgResult.value.prices } };
+  }
+  return {
+    rates,
+    sdgError: sdgResult.reason instanceof Error ? sdgResult.reason.message : String(sdgResult.reason),
+  };
 }

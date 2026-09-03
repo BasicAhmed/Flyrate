@@ -21,7 +21,7 @@ import { formatRate } from "@/lib/format";
 import { formatRelativeTime } from "@/lib/relativeTime";
 import { getDailyTarget, setDailyTarget, setMarginPercent } from "@/lib/settings";
 import { addSale, getRecentSales, type SaleEntry } from "@/lib/sales";
-import { PAIRS, CURRENCIES, isForwardDirection } from "@/lib/corridors";
+import { PAIRS, CURRENCIES } from "@/lib/corridors";
 
 type Tab = "rates" | "profit";
 
@@ -308,8 +308,14 @@ export default function AdminPage() {
                     setFxMessage(null);
                     try {
                       const { updated, skipped } = await updateRatesFromLiveFx();
-                      const { rates: fresh } = await getRatesWithMargin();
-                      setRates(fresh);
+                      const stamp = new Date().toISOString();
+                      for (const u of updated) {
+                        patchRatePair(u.from, u.to, {
+                          marketPrice: u.marketPrice,
+                          sdgSource: u.sdgSource,
+                          updatedAt: stamp,
+                        });
+                      }
                       setFxMessage(
                         skipped.length > 0
                           ? `✅ ${updated.length} تحديث — تعذر: ${skipped.join(", ")}`
@@ -334,7 +340,10 @@ export default function AdminPage() {
                 </p>
               )}
 
-              {/* Rate rows — compact, one card per pair */}
+              {/* Rate rows — every row has the exact same structure and
+                  weight: header (pair + source badge + updated time), then
+                  price / margin / final rate as three equal boxes, then a
+                  full-width save action. Nothing is demoted to fine print. */}
               <div className="mt-4 space-y-2">
                 {PAIRS.map(({ a, b }) => {
                   const row = rates.find((r) => r.from === a && r.to === b);
@@ -342,51 +351,66 @@ export default function AdminPage() {
                   const fromC = CURRENCIES[a];
                   const toC = CURRENCIES[b];
                   const key = `${a}_${b}`;
-                  const fwd = isForwardDirection(a, b);
                   const priceValue = priceInputs[key] ?? String(row.marketPrice);
                   const marginValue = marginInputs[key] ?? (row.marginOverride != null ? String(row.marginOverride) : "");
                   const isSdg = a === "SDG" || b === "SDG";
 
                   return (
-                    <div key={key} className="rounded-xl border border-border bg-surface p-3.5" dir="ltr">
-                      <div className="flex items-center justify-between text-sm text-ink">
+                    <div key={key} className="rounded-xl border border-border bg-surface p-3.5">
+                      <div className="flex items-center justify-between text-sm text-ink" dir="ltr">
                         <span className="font-medium">
                           {fromC.flag} {a} ⇄ {toC.flag} {b}
-                          {isSdg && <span className="mr-1.5 text-[10px] text-subtle">Binance</span>}
                         </span>
-                        <span className="text-xs text-subtle">
-                          {row.updatedAt ? formatRelativeTime(row.updatedAt) : "—"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                              isSdg ? "bg-amber-500/10 text-amber-500" : "bg-surface2 text-subtle"
+                            }`}
+                          >
+                            {isSdg ? "Binance" : "سعر حي"}
+                          </span>
+                          <span className="text-xs text-subtle">
+                            {row.updatedAt ? formatRelativeTime(row.updatedAt) : "—"}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="mt-2.5 grid grid-cols-[1fr_90px_auto] gap-2">
-                        <input
-                          type="number"
-                          step="any"
-                          value={priceValue}
-                          onChange={(e) => setPriceInputs((prev) => ({ ...prev, [key]: e.target.value }))}
-                          className="rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
-                          placeholder="سعر السوق"
-                        />
-                        <input
-                          type="number"
-                          step="any"
-                          value={marginValue}
-                          onChange={(e) => setMarginInputs((prev) => ({ ...prev, [key]: e.target.value }))}
-                          placeholder={`${margin}%`}
-                          className="rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
-                        />
-                        <button
-                          onClick={() => savePair(a, b)}
-                          className="rounded-lg bg-primary px-3.5 text-xs font-semibold text-bg"
-                        >
-                          {saving === key ? "…" : "حفظ"}
-                        </button>
+                      <div className="mt-3 grid grid-cols-3 gap-2" dir="ltr">
+                        <div>
+                          <label className="mb-1 block text-[10px] text-subtle">السعر</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={priceValue}
+                            onChange={(e) => setPriceInputs((prev) => ({ ...prev, [key]: e.target.value }))}
+                            className="w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-center font-mono text-sm text-ink"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] text-subtle">الهامش %</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={marginValue}
+                            onChange={(e) => setMarginInputs((prev) => ({ ...prev, [key]: e.target.value }))}
+                            placeholder={String(margin)}
+                            className="w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-center font-mono text-sm text-ink"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] text-subtle">السعر النهائي</label>
+                          <div className="w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-center font-mono text-sm font-semibold text-primary">
+                            {formatRate(row.rate)}
+                          </div>
+                        </div>
                       </div>
 
-                      <p className="mt-2 font-mono text-xs text-subtle">
-                        {fwd ? `1 ${b} = ${formatRate(row.rate)} ${a}` : `1 ${a} = ${formatRate(row.rate)} ${b}`}
-                      </p>
+                      <button
+                        onClick={() => savePair(a, b)}
+                        className="mt-2 w-full rounded-lg bg-primary py-2 text-xs font-semibold text-bg"
+                      >
+                        {saving === key ? "جارٍ الحفظ…" : "حفظ"}
+                      </button>
                     </div>
                   );
                 })}
