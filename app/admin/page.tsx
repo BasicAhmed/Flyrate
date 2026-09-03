@@ -21,7 +21,7 @@ import { formatRate } from "@/lib/format";
 import { formatRelativeTime } from "@/lib/relativeTime";
 import { getDailyTarget, setDailyTarget, setMarginPercent } from "@/lib/settings";
 import { addSale, getRecentSales, type SaleEntry } from "@/lib/sales";
-import { PAIRS, CURRENCIES } from "@/lib/corridors";
+import { PAIRS, CURRENCIES, isMultiplyCorridor, type CurrencyCode } from "@/lib/corridors";
 
 type Tab = "rates" | "profit";
 
@@ -29,6 +29,15 @@ function todayStr() {
   const d = new Date();
   const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
+}
+
+/** How much of `to` a customer gets for sending exactly 1 unit of `from` —
+ *  the same math the customer-facing calculator uses. Two different values
+ *  for the two directions of the same pair is expected: that's the margin
+ *  spread, not a bug. */
+function amountPerUnit(from: CurrencyCode, to: CurrencyCode, marketPrice: number, marginPercent: number): number {
+  const rate = computeRate(from, to, marketPrice, marginPercent);
+  return isMultiplyCorridor(from, to) ? rate : 1 / rate;
 }
 
 export default function AdminPage() {
@@ -375,7 +384,7 @@ export default function AdminPage() {
                         </div>
                       </div>
 
-                      <div className="mt-3 grid grid-cols-3 gap-2" dir="ltr">
+                      <div className="mt-3 grid grid-cols-2 gap-2" dir="ltr">
                         <div>
                           <label className="mb-1 block text-[10px] text-subtle">السعر</label>
                           <input
@@ -397,11 +406,28 @@ export default function AdminPage() {
                             className="w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-center font-mono text-sm text-ink"
                           />
                         </div>
-                        <div>
-                          <label className="mb-1 block text-[10px] text-subtle">السعر النهائي</label>
-                          <div className="w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-center font-mono text-sm font-semibold text-primary">
-                            {formatRate(row.rate)}
-                          </div>
+                      </div>
+
+                      {/* Both directions, always both, always in this order
+                          (a→b then b→a) — each line names the currency the
+                          customer sends and the currency they receive, so
+                          there's no guessing which number is which. */}
+                      <div className="mt-2 space-y-1.5 rounded-lg border border-border bg-surface2 p-2.5">
+                        <div className="flex items-center justify-between text-xs" dir="ltr">
+                          <span className="text-subtle">
+                            {fromC.flag} {a} → {toC.flag} {b}
+                          </span>
+                          <span className="font-mono font-semibold text-primary">
+                            1 {a} = {formatRate(amountPerUnit(a, b, row.marketPrice, row.marginPercent))} {b}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs" dir="ltr">
+                          <span className="text-subtle">
+                            {toC.flag} {b} → {fromC.flag} {a}
+                          </span>
+                          <span className="font-mono font-semibold text-primary">
+                            1 {b} = {formatRate(amountPerUnit(b, a, row.marketPrice, row.marginPercent))} {a}
+                          </span>
                         </div>
                       </div>
 
