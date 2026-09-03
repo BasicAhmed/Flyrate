@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowLeftRight, ChevronDown, MessageCircle, Share2, Check } from "lucide-react";
 import { FROM_CURRENCIES, validToCurrencies, CURRENCIES, isMultiplyCorridor, type CurrencyCode } from "@/lib/corridors";
 import { formatRate } from "@/lib/format";
+import { formatRelativeTime } from "@/lib/relativeTime";
 import type { RateRow } from "@/lib/rates";
 import { getRateHistory, type RateHistoryPoint } from "@/lib/rateHistory";
 import { buildOrderMessage, whatsappLink } from "@/lib/whatsapp";
@@ -341,6 +342,12 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                     )}
                   </motion.div>
                 </AnimatePresence>
+              )}
+
+              {rate?.updatedAt && (
+                <p className="mt-1 text-center text-[11px] text-subtle">
+                  آخر تحديث للسعر: {formatRelativeTime(rate.updatedAt)}
+                </p>
               )}
 
               <div className="mt-2.5 rounded-2xl border border-primary/20 bg-primary/5 p-4 text-center">
