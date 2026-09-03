@@ -8,12 +8,22 @@ import {
   type User,
 } from "firebase/auth";
 import { auth, firebaseEnabled } from "@/lib/firebase";
-import { getRates, setMarketPrice, setPairMargin, computeRate, updateRatesFromLiveFx, type RateRow } from "@/lib/rates";
+import {
+  getRatesWithMargin,
+  setMarketPrice,
+  setPairMargin,
+  computeRate,
+  updateRatesFromLiveFx,
+  type RateRow,
+} from "@/lib/rates";
 import { appendRateHistory } from "@/lib/rateHistory";
 import { formatRate } from "@/lib/format";
-import { getMarginPercent, setMarginPercent, getDailyTarget, setDailyTarget } from "@/lib/settings";
+import { formatRelativeTime } from "@/lib/relativeTime";
+import { getDailyTarget, setDailyTarget, setMarginPercent } from "@/lib/settings";
 import { addSale, getRecentSales, type SaleEntry } from "@/lib/sales";
-import { PAIRS, CURRENCIES } from "@/lib/corridors";
+import { PAIRS, CURRENCIES, isForwardDirection } from "@/lib/corridors";
+
+type Tab = "rates" | "profit";
 
 function todayStr() {
   const d = new Date();
@@ -28,22 +38,27 @@ export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
+  const [tab, setTab] = useState<Tab>("rates");
+
+  // Rates tab state
+  const [ratesLoaded, setRatesLoaded] = useState(false);
   const [margin, setMargin] = useState(3.5);
   const [marginInput, setMarginInput] = useState("3.5");
   const [savingMargin, setSavingMargin] = useState(false);
-
   const [rates, setRates] = useState<RateRow[]>([]);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
   const [marginInputs, setMarginInputs] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fxUpdating, setFxUpdating] = useState(false);
   const [fxMessage, setFxMessage] = useState<string | null>(null);
 
+  // Profit tab state
+  const [profitLoaded, setProfitLoaded] = useState(false);
   const [saleDate, setSaleDate] = useState(todayStr());
   const [usdSold, setUsdSold] = useState("");
   const [savingSale, setSavingSale] = useState(false);
   const [sales, setSales] = useState<SaleEntry[]>([]);
-
   const [dailyTarget, setDailyTargetState] = useState(2000);
   const [targetInput, setTargetInput] = useState("2000");
   const [savingTarget, setSavingTarget] = useState(false);
@@ -59,19 +74,26 @@ export default function AdminPage() {
     });
   }, []);
 
+  // Load only the active tab's data — switching tabs loads on demand, not upfront.
   useEffect(() => {
     if (!user) return;
-    getRates().then(setRates);
-    getMarginPercent().then((m) => {
-      setMargin(m);
-      setMarginInput(String(m));
-    });
-    getRecentSales(400).then(setSales);
-    getDailyTarget().then((t) => {
-      setDailyTargetState(t);
-      setTargetInput(String(t));
-    });
-  }, [user]);
+    if (tab === "rates" && !ratesLoaded) {
+      getRatesWithMargin().then(({ rates, defaultMargin }) => {
+        setRates(rates);
+        setMargin(defaultMargin);
+        setMarginInput(String(defaultMargin));
+        setRatesLoaded(true);
+      });
+    }
+    if (tab === "profit" && !profitLoaded) {
+      Promise.all([getRecentSales(400), getDailyTarget()]).then(([salesData, target]) => {
+        setSales(salesData);
+        setDailyTargetState(target);
+        setTargetInput(String(target));
+        setProfitLoaded(true);
+      });
+    }
+  }, [user, tab, ratesLoaded, profitLoaded]);
 
   if (!firebaseEnabled) {
     return (
@@ -131,14 +153,11 @@ export default function AdminPage() {
     );
   }
 
-  const totalProfitShown = sales.reduce((sum, s) => sum + s.profit, 0);
-  const totalUsdShown = sales.reduce((sum, s) => sum + s.usdSold, 0);
-
   const todaysSale = sales.find((s) => s.date === todayStr());
   const todaysUsd = todaysSale?.usdSold ?? 0;
   const targetProgress = dailyTarget > 0 ? Math.min(100, (todaysUsd / dailyTarget) * 100) : 0;
 
-  const currentMonth = todayStr().slice(0, 7); // YYYY-MM
+  const currentMonth = todayStr().slice(0, 7);
   const thisMonthSales = sales.filter((s) => s.date.startsWith(currentMonth));
   const thisMonthProfit = thisMonthSales.reduce((sum, s) => sum + s.profit, 0);
   const thisMonthUsd = thisMonthSales.reduce((sum, s) => sum + s.usdSold, 0);
@@ -154,416 +173,359 @@ export default function AdminPage() {
   }
   const monthlyTotals = Array.from(monthlyMap.entries())
     .map(([month, v]) => ({ month, ...v }))
-    .sort((a, b) => (a.month < b.month ? 1 : -1));
+    .sort((a, b) => (a.month < b.month ? 1 : -1))
+    .slice(0, 12);
+
+  /** Applies a save result to local state directly — no refetch. */
+  function patchRatePair(a: string, b: string, updates: Partial<RateRow>) {
+    setRates((prev) =>
+      prev.map((r) => {
+        if ((r.from === a && r.to === b) || (r.from === b && r.to === a)) {
+          const merged = { ...r, ...updates };
+          return { ...merged, rate: computeRate(r.from, r.to, merged.marketPrice, merged.marginPercent) };
+        }
+        return r;
+      })
+    );
+  }
+
+  async function savePair(a: (typeof PAIRS)[number]["a"], b: (typeof PAIRS)[number]["b"]) {
+    const key = `${a}_${b}`;
+    const row = rates.find((r) => r.from === a && r.to === b);
+    if (!row) return;
+
+    const priceRaw = priceInputs[key];
+    const newPrice = priceRaw !== undefined && priceRaw !== "" ? parseFloat(priceRaw) : row.marketPrice;
+
+    const marginRaw = marginInputs[key];
+    const hasMarginInput = marginRaw !== undefined;
+    const newMarginOverride = hasMarginInput ? (marginRaw.trim() === "" ? null : parseFloat(marginRaw)) : undefined;
+
+    setSaving(key);
+    setSaveError(null);
+    try {
+      const jobs: Promise<unknown>[] = [setMarketPrice(a, b, newPrice, row.sdgSource)];
+      if (newMarginOverride !== undefined) {
+        jobs.push(setPairMargin(a, b, newMarginOverride));
+      }
+      await Promise.all(jobs);
+      appendRateHistory(a, b, newPrice); // best-effort, don't block the UI on it
+
+      const effectiveMargin = newMarginOverride === null ? margin : newMarginOverride ?? row.marginOverride ?? margin;
+      patchRatePair(a, b, {
+        marketPrice: newPrice,
+        marginPercent: effectiveMargin,
+        marginOverride: newMarginOverride === null ? undefined : newMarginOverride ?? row.marginOverride,
+        updatedAt: new Date().toISOString(),
+      });
+      setPriceInputs((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      setMarginInputs((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    }
+    setSaving(null);
+  }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-16">
+    <div className="mx-auto max-w-2xl px-6 py-12">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-xl font-semibold text-ink">لوحة الإدارة</h1>
-        <button
-          onClick={() => signOut(auth!)}
-          className="text-sm text-muted underline underline-offset-4"
-        >
+        <button onClick={() => signOut(auth!)} className="text-sm text-muted underline underline-offset-4">
           تسجيل الخروج
         </button>
       </div>
 
-      {/* Global margin */}
-      <div className="mt-8 rounded-2xl border border-border bg-surface p-5">
-        <h2 className="font-display text-base font-semibold text-ink">هامش الربح العام (الافتراضي)</h2>
-        <p className="mt-1 text-xs text-subtle">
-          يُطبّق على أي زوج ما عنده هامش خاص بيه — تقدر تحدد هامش مختلف لكل زوج بالأسفل (مثلاً هامش أعلى للأزواج المطلوبة زي السودان، وأقل للأزواج اللي عايز تنافس بيها).
-        </p>
-        <div className="mt-4 flex items-center gap-3" dir="ltr">
-          <input
-            type="number"
-            step="any"
-            value={marginInput}
-            onChange={(e) => setMarginInput(e.target.value)}
-            className="w-28 rounded-lg border border-border bg-surface2 px-3 py-2 text-sm text-ink"
-          />
-          <span className="text-sm text-muted">%</span>
+      {/* Tabs */}
+      <div className="mt-6 grid grid-cols-2 gap-1 rounded-full border border-border bg-surface2 p-1">
+        {(
+          [
+            ["rates", "الأسعار"],
+            ["profit", "الأرباح"],
+          ] as const
+        ).map(([value, label]) => (
           <button
-            onClick={async () => {
-              setSavingMargin(true);
-              const val = parseFloat(marginInput);
-              await setMarginPercent(val);
-              setMargin(val);
-              const fresh = await getRates();
-              setRates(fresh);
-              setSavingMargin(false);
-            }}
-            className="mr-auto rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
+            key={value}
+            onClick={() => setTab(value)}
+            className={`rounded-full py-2.5 text-sm font-semibold transition-colors ${
+              tab === value ? "bg-primary text-bg" : "text-muted"
+            }`}
           >
-            {savingMargin ? "جارٍ الحفظ…" : "حفظ الهامش"}
+            {label}
           </button>
-        </div>
+        ))}
       </div>
 
-      {/* Rates */}
-      <div className="mt-6">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="font-display text-base font-semibold text-ink">أسعار السوق والهامش لكل زوج</h2>
-            <p className="mt-1 text-xs text-subtle">
-              كل الأزواج تتحدث تلقائياً كل يوم — الأزواج العادية من سعر الصرف الحقيقي، وأزواج الجنيه السوداني من متوسط أول 4 عروض شراء USDT/SDG على Binance P2P (لتقلبه الكبير). تقدر تعدل السعر أو الهامش يدوياً برضه.
-            </p>
-          </div>
-          <button
-            onClick={async () => {
-              setFxUpdating(true);
-              setFxMessage(null);
-              try {
-                const { updated, skipped } = await updateRatesFromLiveFx();
-                setRates(await getRates());
-                let msg = `✅ تم تحديث ${updated.length} زوج بأسعار السوق الحالية`;
-                if (skipped.length > 0) {
-                  msg += ` — تعذر تحديث: ${skipped.join(", ")}`;
-                }
-                setFxMessage(msg);
-              } catch (err) {
-                setFxMessage(`❌ ${err instanceof Error ? err.message : String(err)}`);
-              }
-              setFxUpdating(false);
-            }}
-            disabled={fxUpdating}
-            className="shrink-0 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg disabled:opacity-60"
-          >
-            {fxUpdating ? "جارٍ التحديث…" : "🔄 تحديث الأسعار الآن"}
-          </button>
-        </div>
-
-        {fxMessage && (
-          <div className="mt-3 rounded-lg border border-border bg-surface2 p-3 text-sm text-ink">
-            {fxMessage}
-          </div>
-        )}
-
-        {saveError && (
-          <div className="mt-3 rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm text-primary">
-            فشل الحفظ: {saveError}
-            <br />
-            تأكد من نشر قواعد Firestore (Rules → Publish) في لوحة Firebase.
-          </div>
-        )}
-
-        <div className="mt-4 space-y-3">
-          {PAIRS.map(({ a, b }) => {
-            const row = rates.find((r) => r.from === a && r.to === b) ?? {
-              from: a,
-              to: b,
-              marketPrice: 0,
-              rate: 0,
-              marginPercent: margin,
-              marginOverride: undefined as number | undefined,
-              updatedAt: null,
-            };
-            const fromC = CURRENCIES[a];
-            const toC = CURRENCIES[b];
-            const key = `${a}_${b}`;
-            const effectiveMargin = row.marginOverride ?? margin;
-            const marginInputValue = marginInputs[key] ?? (row.marginOverride != null ? String(row.marginOverride) : "");
-
-            return (
-              <div
-                key={key}
-                className="rounded-xl border border-border bg-surface p-4"
-                dir="ltr"
-              >
-                <div className="flex items-center justify-between text-sm text-ink">
-                  <span>
-                    {fromC.flag} {a} ⇄ {toC.flag} {b}
-                  </span>
-                  <span className="text-xs text-subtle">
-                    {a === "SDG" || b === "SDG" ? "🔄 تلقائي يومياً (Binance P2P)" : "🔄 تلقائي يومياً"}
-                  </span>
+      {tab === "rates" && (
+        <div className="mt-6">
+          {!ratesLoaded ? (
+            <p className="py-10 text-center text-sm text-subtle">جارٍ التحميل…</p>
+          ) : (
+            <>
+              {/* Global margin + FX update, compact single row */}
+              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface p-4">
+                <span className="text-sm font-medium text-ink">الهامش العام</span>
+                <div className="flex items-center gap-2" dir="ltr">
+                  <input
+                    type="number"
+                    step="any"
+                    value={marginInput}
+                    onChange={(e) => setMarginInput(e.target.value)}
+                    className="w-20 rounded-lg border border-border bg-surface2 px-2.5 py-1.5 text-sm text-ink"
+                  />
+                  <span className="text-sm text-muted">%</span>
                 </div>
-                <div className="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-3">
-                  <label className="text-xs text-subtle">
-                    سعر السوق ({a} لكل 1 {b})
-                    <input
-                      type="number"
-                      step="any"
-                      defaultValue={row.marketPrice}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        setRates((prev) => {
-                          const others = prev.filter(
-                            (r) => !((r.from === a && r.to === b) || (r.from === b && r.to === a))
-                          );
-                          return [
-                            ...others,
-                            {
-                              from: a,
-                              to: b,
-                              marketPrice: val,
-                              rate: computeRate(a, b, val, effectiveMargin),
-                              marginPercent: effectiveMargin,
-                              marginOverride: row.marginOverride,
-                              updatedAt: row.updatedAt,
-                              sdgSource: row.sdgSource,
-                            },
-                            {
-                              from: b,
-                              to: a,
-                              marketPrice: val,
-                              rate: computeRate(b, a, val, effectiveMargin),
-                              marginPercent: effectiveMargin,
-                              marginOverride: row.marginOverride,
-                              updatedAt: row.updatedAt,
-                              sdgSource: row.sdgSource,
-                            },
-                          ];
-                        });
-                      }}
-                      className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
-                    />
-                  </label>
-                  <div className="text-xs text-subtle">
-                    {a}→{b}: <span className="font-semibold text-primary">{formatRate(computeRate(a, b, row.marketPrice, effectiveMargin))}</span>
-                    <br />
-                    {b}→{a}: <span className="font-semibold text-primary">{formatRate(computeRate(b, a, row.marketPrice, effectiveMargin))}</span>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      setSaving(key);
-                      setSaveError(null);
-                      try {
-                        await setMarketPrice(a, b, row.marketPrice, row.sdgSource);
-                        await appendRateHistory(a, b, row.marketPrice);
-                      } catch (err) {
-                        setSaveError(err instanceof Error ? err.message : String(err));
-                      }
-                      setSaving(null);
-                    }}
-                    className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
-                  >
-                    {saving === key ? "جارٍ الحفظ…" : "حفظ"}
-                  </button>
-                </div>
+                <button
+                  onClick={async () => {
+                    setSavingMargin(true);
+                    const val = parseFloat(marginInput);
+                    await setMarginPercent(val);
+                    setMargin(val);
+                    setRates((prev) =>
+                      prev.map((r) =>
+                        r.marginOverride == null
+                          ? { ...r, marginPercent: val, rate: computeRate(r.from, r.to, r.marketPrice, val) }
+                          : r
+                      )
+                    );
+                    setSavingMargin(false);
+                  }}
+                  className="rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-ink"
+                >
+                  {savingMargin ? "…" : "حفظ"}
+                </button>
 
-                <div className="mt-3 flex items-end gap-3 border-t border-border pt-3">
-                  <label className="text-xs text-subtle">
-                    هامش خاص بهذا الزوج (فاضي = يستخدم العام {margin}%)
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder={String(margin)}
-                      value={marginInputValue}
-                      onChange={(e) =>
-                        setMarginInputs((prev) => ({ ...prev, [key]: e.target.value }))
-                      }
-                      className="mt-1 w-28 rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
-                    />
-                  </label>
-                  <button
-                    onClick={async () => {
-                      setSaving(`${key}_margin`);
-                      setSaveError(null);
-                      try {
-                        const raw = marginInputs[key];
-                        const percent = raw === undefined || raw.trim() === "" ? null : parseFloat(raw);
-                        await setPairMargin(a, b, percent);
-                        setRates(await getRates());
-                        setMarginInputs((prev) => {
-                          const next = { ...prev };
-                          delete next[key];
-                          return next;
-                        });
-                      } catch (err) {
-                        setSaveError(err instanceof Error ? err.message : String(err));
-                      }
-                      setSaving(null);
-                    }}
-                    className="rounded-full border border-border px-4 py-2 text-xs font-semibold text-ink"
-                  >
-                    {saving === `${key}_margin` ? "جارٍ الحفظ…" : "حفظ الهامش"}
-                  </button>
-                  {row.marginOverride != null && (
-                    <span className="text-xs text-subtle">مخصص: {row.marginOverride}%</span>
-                  )}
-                </div>
-
-                {(a === "SDG" || b === "SDG") && row.sdgSource && (
-                  <p className="mt-2 text-xs text-subtle">
-                    سعر USDT→SDG المستخدم: <span className="font-semibold text-ink">{row.sdgSource.usdtToSdg.toFixed(2)}</span>
-                    {" "}(متوسط {row.sdgSource.prices.length} عروض Binance P2P: {row.sdgSource.prices.map((p) => p.toFixed(2)).join(", ")})
-                  </p>
-                )}
+                <button
+                  onClick={async () => {
+                    setFxUpdating(true);
+                    setFxMessage(null);
+                    try {
+                      const { updated, skipped } = await updateRatesFromLiveFx();
+                      const { rates: fresh } = await getRatesWithMargin();
+                      setRates(fresh);
+                      setFxMessage(
+                        skipped.length > 0
+                          ? `✅ ${updated.length} تحديث — تعذر: ${skipped.join(", ")}`
+                          : `✅ تم تحديث ${updated.length} زوج`
+                      );
+                    } catch (err) {
+                      setFxMessage(`❌ ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                    setFxUpdating(false);
+                  }}
+                  disabled={fxUpdating}
+                  className="mr-auto rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-bg disabled:opacity-60"
+                >
+                  {fxUpdating ? "جارٍ التحديث…" : "🔄 تحديث الآن"}
+                </button>
               </div>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Daily target */}
-      <div className="mt-10 rounded-2xl border border-border bg-surface p-5">
-        <h2 className="font-display text-base font-semibold text-ink">الهدف اليومي</h2>
-        <p className="mt-1 text-xs text-subtle">
-          حدد هدف البيع اليومي بالدولار، وشريط التقدم يتحدث تلقائياً كل ما تضيف مبلغ.
-        </p>
-        <div className="mt-4 flex items-center gap-3" dir="ltr">
-          <span className="text-sm text-muted">$</span>
-          <input
-            type="number"
-            step="any"
-            value={targetInput}
-            onChange={(e) => setTargetInput(e.target.value)}
-            className="w-32 rounded-lg border border-border bg-surface2 px-3 py-2 text-sm text-ink"
-          />
-          <button
-            onClick={async () => {
-              setSavingTarget(true);
-              const val = parseFloat(targetInput);
-              await setDailyTarget(val);
-              setDailyTargetState(val);
-              setSavingTarget(false);
-            }}
-            className="mr-auto rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
-          >
-            {savingTarget ? "جارٍ الحفظ…" : "حفظ الهدف"}
-          </button>
-        </div>
+              {fxMessage && <p className="mt-2 text-xs text-subtle">{fxMessage}</p>}
+              {saveError && (
+                <p className="mt-2 text-xs text-primary">
+                  فشل الحفظ: {saveError} — تأكد من نشر قواعد Firestore.
+                </p>
+              )}
 
-        <div className="mt-5">
-          <div className="flex items-center justify-between text-sm" dir="ltr">
-            <span className="font-mono font-semibold text-ink">
-              ${todaysUsd.toLocaleString()} / ${dailyTarget.toLocaleString()}
-            </span>
-            <span className="font-mono text-xs text-subtle">{targetProgress.toFixed(0)}%</span>
-          </div>
-          <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-surface2">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-500"
-              style={{ width: `${targetProgress}%` }}
-            />
-          </div>
-          {targetProgress >= 100 && (
-            <p className="mt-2 text-xs font-semibold text-primary">🎉 وصلت الهدف اليوم!</p>
+              {/* Rate rows — compact, one card per pair */}
+              <div className="mt-4 space-y-2">
+                {PAIRS.map(({ a, b }) => {
+                  const row = rates.find((r) => r.from === a && r.to === b);
+                  if (!row) return null;
+                  const fromC = CURRENCIES[a];
+                  const toC = CURRENCIES[b];
+                  const key = `${a}_${b}`;
+                  const fwd = isForwardDirection(a, b);
+                  const priceValue = priceInputs[key] ?? String(row.marketPrice);
+                  const marginValue = marginInputs[key] ?? (row.marginOverride != null ? String(row.marginOverride) : "");
+                  const isSdg = a === "SDG" || b === "SDG";
+
+                  return (
+                    <div key={key} className="rounded-xl border border-border bg-surface p-3.5" dir="ltr">
+                      <div className="flex items-center justify-between text-sm text-ink">
+                        <span className="font-medium">
+                          {fromC.flag} {a} ⇄ {toC.flag} {b}
+                          {isSdg && <span className="mr-1.5 text-[10px] text-subtle">Binance</span>}
+                        </span>
+                        <span className="text-xs text-subtle">
+                          {row.updatedAt ? formatRelativeTime(row.updatedAt) : "—"}
+                        </span>
+                      </div>
+
+                      <div className="mt-2.5 grid grid-cols-[1fr_90px_auto] gap-2">
+                        <input
+                          type="number"
+                          step="any"
+                          value={priceValue}
+                          onChange={(e) => setPriceInputs((prev) => ({ ...prev, [key]: e.target.value }))}
+                          className="rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                          placeholder="سعر السوق"
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          value={marginValue}
+                          onChange={(e) => setMarginInputs((prev) => ({ ...prev, [key]: e.target.value }))}
+                          placeholder={`${margin}%`}
+                          className="rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                        />
+                        <button
+                          onClick={() => savePair(a, b)}
+                          className="rounded-lg bg-primary px-3.5 text-xs font-semibold text-bg"
+                        >
+                          {saving === key ? "…" : "حفظ"}
+                        </button>
+                      </div>
+
+                      <p className="mt-2 font-mono text-xs text-subtle">
+                        {fwd ? `1 ${b} = ${formatRate(row.rate)} ${a}` : `1 ${a} = ${formatRate(row.rate)} ${b}`}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
-      </div>
+      )}
 
-      {/* Daily profit tracker */}
-      <div className="mt-6 rounded-2xl border border-border bg-surface p-5">
-        <h2 className="font-display text-base font-semibold text-ink">الأرباح اليومية</h2>
-        <p className="mt-1 text-xs text-subtle">
-          أضف كل عملية بيع بمبلغها — تُضاف تلقائياً لإجمالي اليوم، ويُحسب الربح حسب الهامش الحالي ({margin}%).
-        </p>
+      {tab === "profit" && (
+        <div className="mt-6">
+          {!profitLoaded ? (
+            <p className="py-10 text-center text-sm text-subtle">جارٍ التحميل…</p>
+          ) : (
+            <>
+              {/* Daily target */}
+              <div className="rounded-2xl border border-border bg-surface p-4">
+                <div className="flex items-center justify-between text-sm" dir="ltr">
+                  <span className="font-mono font-semibold text-ink">
+                    ${todaysUsd.toLocaleString()} / ${dailyTarget.toLocaleString()}
+                  </span>
+                  <span className="font-mono text-xs text-subtle">{targetProgress.toFixed(0)}%</span>
+                </div>
+                <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-surface2">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-500"
+                    style={{ width: `${targetProgress}%` }}
+                  />
+                </div>
+                <div className="mt-3 flex items-center gap-2" dir="ltr">
+                  <span className="text-sm text-muted">الهدف $</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={targetInput}
+                    onChange={(e) => setTargetInput(e.target.value)}
+                    className="w-24 rounded-lg border border-border bg-surface2 px-2.5 py-1.5 text-sm text-ink"
+                  />
+                  <button
+                    onClick={async () => {
+                      setSavingTarget(true);
+                      const val = parseFloat(targetInput);
+                      await setDailyTarget(val);
+                      setDailyTargetState(val);
+                      setSavingTarget(false);
+                    }}
+                    className="rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-ink"
+                  >
+                    {savingTarget ? "…" : "حفظ"}
+                  </button>
+                </div>
+              </div>
 
-        <div className="mt-5 rounded-xl border border-primary/40 bg-primary/10 p-4">
-          <p className="text-xs text-subtle">أرباحك حتى الآن هذا الشهر</p>
-          <p className="mt-1 font-mono text-2xl font-bold text-primary" dir="ltr">
-            ${thisMonthProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-          </p>
-          <p className="mt-1 text-xs text-muted" dir="ltr">
-            من ${thisMonthUsd.toLocaleString()} دولار مباع
-          </p>
+              {/* This month's profit */}
+              <div className="mt-4 rounded-xl border border-primary/40 bg-primary/10 p-4">
+                <p className="text-xs text-subtle">أرباحك هذا الشهر</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-primary" dir="ltr">
+                  ${thisMonthProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </p>
+                <p className="mt-1 text-xs text-muted" dir="ltr">
+                  من ${thisMonthUsd.toLocaleString()} دولار مباع
+                </p>
+              </div>
+
+              {/* Add a sale */}
+              <div className="mt-4 grid grid-cols-[1fr_1fr_auto] items-end gap-2" dir="ltr">
+                <label className="text-xs text-subtle">
+                  التاريخ
+                  <input
+                    type="date"
+                    value={saleDate}
+                    onChange={(e) => setSaleDate(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                  />
+                </label>
+                <label className="text-xs text-subtle">
+                  مبلغ العملية ($)
+                  <input
+                    type="number"
+                    step="any"
+                    value={usdSold}
+                    onChange={(e) => setUsdSold(e.target.value)}
+                    placeholder="200"
+                    className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
+                  />
+                </label>
+                <button
+                  onClick={async () => {
+                    const val = parseFloat(usdSold);
+                    if (!val) return;
+                    setSavingSale(true);
+                    await addSale(saleDate, val, margin);
+                    const profitDelta = val * (margin / 100);
+                    setSales((prev) => {
+                      const existing = prev.find((s) => s.date === saleDate);
+                      const updatedEntry: SaleEntry = existing
+                        ? { ...existing, usdSold: existing.usdSold + val, profit: existing.profit + profitDelta }
+                        : { date: saleDate, usdSold: val, profit: profitDelta, updatedAt: new Date().toISOString() };
+                      const rest = prev.filter((s) => s.date !== saleDate);
+                      return [updatedEntry, ...rest].sort((x, y) => (x.date < y.date ? 1 : -1));
+                    });
+                    setUsdSold("");
+                    setSavingSale(false);
+                  }}
+                  className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
+                >
+                  {savingSale ? "…" : "إضافة"}
+                </button>
+              </div>
+
+              {/* Monthly totals only — full daily log dropped as clutter */}
+              {monthlyTotals.length > 0 && (
+                <div className="mt-6 overflow-x-auto rounded-xl border border-border">
+                  <table className="w-full min-w-[380px] border-collapse text-left font-mono text-sm" dir="ltr">
+                    <thead>
+                      <tr className="border-b border-border bg-surface2 text-xs text-subtle">
+                        <th className="px-4 py-2.5 font-medium">Month</th>
+                        <th className="px-4 py-2.5 font-medium">USD Sold</th>
+                        <th className="px-4 py-2.5 font-medium">Profit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthlyTotals.map((m) => (
+                        <tr key={m.month} className="border-b border-border/50">
+                          <td className="px-4 py-2.5 text-ink">{m.month}</td>
+                          <td className="px-4 py-2.5 text-muted">${m.usdSold.toLocaleString()}</td>
+                          <td className="px-4 py-2.5 font-semibold text-primary">
+                            ${m.profit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
         </div>
-
-        <div className="mt-4 grid grid-cols-[1fr_1fr_auto] items-end gap-3" dir="ltr">
-          <label className="text-xs text-subtle">
-            التاريخ
-            <input
-              type="date"
-              value={saleDate}
-              onChange={(e) => setSaleDate(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
-            />
-          </label>
-          <label className="text-xs text-subtle">
-            مبلغ العملية ($)
-            <input
-              type="number"
-              step="any"
-              value={usdSold}
-              onChange={(e) => setUsdSold(e.target.value)}
-              placeholder="200"
-              className="mt-1 w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-sm text-ink"
-            />
-          </label>
-          <button
-            onClick={async () => {
-              const val = parseFloat(usdSold);
-              if (!val) return;
-              setSavingSale(true);
-              await addSale(saleDate, val, margin);
-              const fresh = await getRecentSales(400);
-              setSales(fresh);
-              setUsdSold("");
-              setSavingSale(false);
-            }}
-            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-bg"
-          >
-            {savingSale ? "جارٍ الحفظ…" : "إضافة"}
-          </button>
-        </div>
-
-        {monthlyTotals.length > 0 && (
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold text-ink">سجل الأرباح الشهرية</h3>
-            <div className="mt-2 overflow-x-auto rounded-xl border border-border">
-              <table className="w-full min-w-[380px] border-collapse text-left font-mono text-sm" dir="ltr">
-                <thead>
-                  <tr className="border-b border-border bg-surface2 text-xs text-subtle">
-                    <th className="px-4 py-2.5 font-medium">Month</th>
-                    <th className="px-4 py-2.5 font-medium">USD Sold</th>
-                    <th className="px-4 py-2.5 font-medium">Profit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyTotals.map((m) => (
-                    <tr key={m.month} className="border-b border-border/50">
-                      <td className="px-4 py-2.5 text-ink">{m.month}</td>
-                      <td className="px-4 py-2.5 text-muted">${m.usdSold.toLocaleString()}</td>
-                      <td className="px-4 py-2.5 font-semibold text-primary">
-                        ${m.profit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {sales.length > 0 && (
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold text-ink">سجل يومي (تفصيلي)</h3>
-            <div className="mt-2 overflow-x-auto rounded-xl border border-border">
-            <table className="w-full min-w-[420px] border-collapse text-right font-mono text-sm" dir="ltr">
-              <thead>
-                <tr className="border-b border-border bg-surface2 text-xs text-subtle">
-                  <th className="px-4 py-2.5 text-left font-medium">Date</th>
-                  <th className="px-4 py-2.5 text-left font-medium">USD Sold</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Profit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sales.map((s) => (
-                  <tr key={s.date} className="border-b border-border/50">
-                    <td className="px-4 py-2.5 text-left text-ink">{s.date}</td>
-                    <td className="px-4 py-2.5 text-left text-muted">${s.usdSold.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-left font-semibold text-primary">
-                      ${s.profit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                ))}
-                <tr className="bg-surface2">
-                  <td className="px-4 py-2.5 text-left font-semibold text-ink">Total</td>
-                  <td className="px-4 py-2.5 text-left font-semibold text-ink">
-                    ${totalUsdShown.toLocaleString()}
-                  </td>
-                  <td className="px-4 py-2.5 text-left font-semibold text-primary">
-                    ${totalProfitShown.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

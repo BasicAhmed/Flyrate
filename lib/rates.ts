@@ -88,14 +88,20 @@ function seedRows(defaultMargin: number): RateRow[] {
  *  pair → both directions' margin-adjusted rates). Pairs without their own
  *  override use the global default margin. Tries Firestore first; falls
  *  back to the bundled seed file so the site works before Firebase is
- *  wired up. */
-export async function getRates(): Promise<RateRow[]> {
-  const defaultMargin = await getMarginPercent();
-  if (!firebaseEnabled || !db) return seedRows(defaultMargin);
+ *  wired up. Fetches the margin and the rates collection in parallel
+ *  (they're independent reads) rather than one after another. */
+export async function getRatesWithMargin(): Promise<{ rates: RateRow[]; defaultMargin: number }> {
+  if (!firebaseEnabled || !db) {
+    const defaultMargin = await getMarginPercent();
+    return { rates: seedRows(defaultMargin), defaultMargin };
+  }
 
   try {
-    const snap = await getDocs(collection(db, "rates"));
-    if (snap.empty) return seedRows(defaultMargin);
+    const [defaultMargin, snap] = await Promise.all([
+      getMarginPercent(),
+      getDocs(collection(db, "rates")),
+    ]);
+    if (snap.empty) return { rates: seedRows(defaultMargin), defaultMargin };
 
     const map = new Map<
       string,
@@ -123,7 +129,7 @@ export async function getRates(): Promise<RateRow[]> {
       seed.rates.map((r) => [pairKey(r.from as CurrencyCode, r.to as CurrencyCode), r.marketPrice])
     );
 
-    return PAIRS.flatMap(({ a, b }) => {
+    const rates = PAIRS.flatMap(({ a, b }) => {
       const key = pairKey(a, b);
       const entry = map.get(key);
       const marketPrice = entry?.marketPrice ?? fallback.get(key)!;
@@ -138,9 +144,18 @@ export async function getRates(): Promise<RateRow[]> {
         entry?.sdgSource
       );
     });
+    return { rates, defaultMargin };
   } catch {
-    return seedRows(defaultMargin);
+    const defaultMargin = await getMarginPercent().catch(() => 3.5);
+    return { rates: seedRows(defaultMargin), defaultMargin };
   }
+}
+
+/** Convenience wrapper for callers that only need the rate rows (the public
+ *  site — Calculator, RateTicker, RatesTable). Admin should use
+ *  getRatesWithMargin() instead to avoid fetching the margin twice. */
+export async function getRates(): Promise<RateRow[]> {
+  return (await getRatesWithMargin()).rates;
 }
 
 /** Writes one PAIR's market price (not a direction — a pair has exactly one).
@@ -216,20 +231,24 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   const updated: string[] = [];
   const skipped: string[] = [];
 
-  for (const { a, b } of PAIRS) {
+  const jobs = PAIRS.map(async ({ a, b }) => {
     const key = pairKey(a, b);
     const rateA = rateFor(a);
     const rateB = rateFor(b);
     if (!rateA || !rateB) {
       skipped.push(key);
-      continue;
+      return;
     }
     const marketPrice = rateA / rateB;
     const involvesSdg = a === "SDG" || b === "SDG";
-    await setMarketPrice(a, b, marketPrice, involvesSdg ? sdgSource : undefined);
-    await appendRateHistory(a, b, marketPrice);
+    await Promise.all([
+      setMarketPrice(a, b, marketPrice, involvesSdg ? sdgSource : undefined),
+      appendRateHistory(a, b, marketPrice),
+    ]);
     updated.push(key);
-  }
+  });
+
+  await Promise.all(jobs);
 
   return { updated, skipped };
 }

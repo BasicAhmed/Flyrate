@@ -38,7 +38,7 @@ export async function GET(request: Request) {
   const updated: { pair: string; marketPrice: number }[] = [];
   const skipped: { pair: string; reason: string }[] = [];
 
-  for (const { a, b } of PAIRS) {
+  const jobs = PAIRS.map(async ({ a, b }) => {
     const key = `${a}_${b}`;
     const involvesSdg = a === "SDG" || b === "SDG";
 
@@ -49,33 +49,36 @@ export async function GET(request: Request) {
         pair: key,
         reason: involvesSdg ? sdgError ?? "SDG rate unavailable" : "missing FX data for this pair",
       });
-      continue;
+      return;
     }
 
     // marketPrice = units of `a` per 1 unit of `b` = (a per USD) / (b per USD).
     const marketPrice = rateA / rateB;
 
-    await db.collection("rates").doc(key).set(
-      {
-        from: a,
-        to: b,
-        marketPrice,
-        updatedAt: new Date(),
-        source: involvesSdg ? "auto-fx-binance-p2p" : "auto-fx",
-        ...(involvesSdg && sdgDetail
-          ? { sdgUsdtToSdg: sdgDetail.usdtToSdg, sdgPrices: sdgDetail.prices }
-          : {}),
-      },
-      { merge: true }
-    );
+    const historyRef = db.collection("rateHistory").doc(key);
+    const [, historySnap] = await Promise.all([
+      db.collection("rates").doc(key).set(
+        {
+          from: a,
+          to: b,
+          marketPrice,
+          updatedAt: new Date(),
+          source: involvesSdg ? "auto-fx-binance-p2p" : "auto-fx",
+          ...(involvesSdg && sdgDetail
+            ? { sdgUsdtToSdg: sdgDetail.usdtToSdg, sdgPrices: sdgDetail.prices }
+            : {}),
+        },
+        { merge: true }
+      ),
+      historyRef.get(),
+    ]);
     updated.push({ pair: key, marketPrice });
 
-    // Append to this pair's daily history (dedupes same-day reruns).
-    const historyRef = db.collection("rateHistory").doc(key);
-    const historySnap = await historyRef.get();
     const existing: RateHistoryPoint[] = historySnap.exists ? historySnap.data()?.entries ?? [] : [];
     await historyRef.set({ entries: mergeHistoryEntry(existing, todayDateStr(), marketPrice) });
-  }
+  });
+
+  await Promise.all(jobs);
 
   return NextResponse.json({ ok: true, at: new Date().toISOString(), updated, skipped, sdgError, sdgDetail });
 }
