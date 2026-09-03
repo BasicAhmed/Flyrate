@@ -370,18 +370,40 @@ export default function AdminPage() {
                         <span className="font-medium">
                           {fromC.flag} {a} ⇄ {toC.flag} {b}
                         </span>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                              isSdg ? "bg-amber-500/10 text-amber-500" : "bg-surface2 text-subtle"
-                            }`}
-                          >
-                            {isSdg ? "Binance" : "سعر حي"}
-                          </span>
-                          <span className="text-xs text-subtle">
-                            {row.updatedAt ? formatRelativeTime(row.updatedAt) : "—"}
+                        <span className="text-xs text-subtle">
+                          {row.updatedAt ? formatRelativeTime(row.updatedAt) : "—"}
+                        </span>
+                      </div>
+
+                      {/* Simple, plain lines — no boxes. Both directions
+                          always shown, then the margin, then (for SDG pairs)
+                          the raw USDT→SDG price the whole pair is derived
+                          from. */}
+                      <div className="mt-2.5 space-y-1 text-sm" dir="ltr">
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted">{a} → {b}</span>
+                          <span className="font-mono font-semibold text-primary">
+                            {formatRate(amountPerUnit(a, b, row.marketPrice, row.marginPercent))}
                           </span>
                         </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted">{b} → {a}</span>
+                          <span className="font-mono font-semibold text-primary">
+                            {formatRate(amountPerUnit(b, a, row.marketPrice, row.marginPercent))}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted">هامش الربح</span>
+                          <span className="font-mono font-semibold text-ink">{row.marginPercent}%</span>
+                        </div>
+                        {isSdg && row.sdgSource && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-muted">USDT → SDG</span>
+                            <span className="font-mono font-semibold text-ink">
+                              {row.sdgSource.usdtToSdg.toFixed(2)}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-3 grid grid-cols-2 gap-2" dir="ltr">
@@ -405,29 +427,6 @@ export default function AdminPage() {
                             placeholder={String(margin)}
                             className="w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-center font-mono text-sm text-ink"
                           />
-                        </div>
-                      </div>
-
-                      {/* Both directions, always both, always in this order
-                          (a→b then b→a) — each line names the currency the
-                          customer sends and the currency they receive, so
-                          there's no guessing which number is which. */}
-                      <div className="mt-2 space-y-1.5 rounded-lg border border-border bg-surface2 p-2.5">
-                        <div className="flex items-center justify-between text-xs" dir="ltr">
-                          <span className="text-subtle">
-                            {fromC.flag} {a} → {toC.flag} {b}
-                          </span>
-                          <span className="font-mono font-semibold text-primary">
-                            1 {a} = {formatRate(amountPerUnit(a, b, row.marketPrice, row.marginPercent))} {b}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs" dir="ltr">
-                          <span className="text-subtle">
-                            {toC.flag} {b} → {fromC.flag} {a}
-                          </span>
-                          <span className="font-mono font-semibold text-primary">
-                            1 {b} = {formatRate(amountPerUnit(b, a, row.marketPrice, row.marginPercent))} {a}
-                          </span>
                         </div>
                       </div>
 
