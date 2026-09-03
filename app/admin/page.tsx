@@ -19,7 +19,7 @@ import { formatRate, formatSmart } from "@/lib/format";
 import { formatRelativeTime } from "@/lib/relativeTime";
 import { getDailyTarget, setDailyTarget, setMarginPercent } from "@/lib/settings";
 import { addSale, getRecentSales, type SaleEntry } from "@/lib/sales";
-import { PAIRS, CURRENCIES, isMultiplyCorridor, type CurrencyCode } from "@/lib/corridors";
+import { PAIRS, CURRENCIES } from "@/lib/corridors";
 
 type Tab = "rates" | "profit";
 
@@ -27,15 +27,6 @@ function todayStr() {
   const d = new Date();
   const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
-}
-
-/** How much of `to` a customer gets for sending exactly 1 unit of `from` —
- *  the same math the customer-facing calculator uses. Two different values
- *  for the two directions of the same pair is expected: that's the margin
- *  spread, not a bug. */
-function amountPerUnit(from: CurrencyCode, to: CurrencyCode, marketPrice: number, marginPercent: number): number {
-  const rate = computeRate(from, to, marketPrice, marginPercent);
-  return isMultiplyCorridor(from, to) ? rate : 1 / rate;
 }
 
 export default function AdminPage() {
@@ -365,13 +356,13 @@ export default function AdminPage() {
                         <div className="flex items-center justify-between">
                           <span className="text-muted">{a} → {b}</span>
                           <span className="font-mono font-semibold text-primary">
-                            {formatSmart(amountPerUnit(a, b, row.marketPrice, row.marginPercent))}
+                            {formatSmart(computeRate(a, b, row.marketPrice, row.marginPercent))}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-muted">{b} → {a}</span>
                           <span className="font-mono font-semibold text-primary">
-                            {formatSmart(amountPerUnit(b, a, row.marketPrice, row.marginPercent))}
+                            {formatSmart(computeRate(b, a, row.marketPrice, row.marginPercent))}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
