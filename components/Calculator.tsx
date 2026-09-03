@@ -66,6 +66,20 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
   // pair multiplies instead of dividing (see lib/corridors.ts + lib/rates.ts).
   const usesMultiply = toCurrency ? isMultiplyCorridor(fromCode, toCurrency.code) : false;
 
+  // Compares the last two history points to say whether the rate has moved
+  // in the customer's favor since yesterday. marketPrice going up is good
+  // for the customer on the multiply leg of a pair, bad on the divide leg
+  // (see lib/rates.ts computeRate) — same logic as the "1 X = Y Z" line.
+  const trend = useMemo<"good" | "bad" | null>(() => {
+    if (history.length < 2) return null;
+    const prev = history[history.length - 2].marketPrice;
+    const latest = history[history.length - 1].marketPrice;
+    if (prev === latest) return null;
+    const marketWentUp = latest > prev;
+    const goodForCustomer = usesMultiply ? marketWentUp : !marketWentUp;
+    return goodForCustomer ? "good" : "bad";
+  }, [history, usesMultiply]);
+
   // "send" mode: student knows what they're sending (fromCurrency amount).
   // "receive" mode: student knows what they need the recipient to get (toCurrency amount).
   const amountSent =
@@ -284,17 +298,49 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
               )}
 
               {rate && toCurrency && (
-                <div className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2">
-                  <span className="relative flex size-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex size-2 rounded-full bg-red-500" />
-                  </span>
-                  <span className="font-mono text-sm font-bold text-red-500" dir="ltr">
-                    {usesMultiply
-                      ? `1 ${fromCurrency.code} = ${formatRate(rate.rate)} ${toCurrency.code}`
-                      : `1 ${toCurrency.code} = ${formatRate(rate.rate)} ${fromCurrency.code}`}
-                  </span>
-                </div>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={`${fromCode}-${toCurrency.code}-${trend ?? "flat"}`}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.25 }}
+                    className={`mt-3 flex items-center justify-center gap-2 rounded-xl border px-3 py-2 ${
+                      trend === "good"
+                        ? "border-emerald-500/40 bg-emerald-500/10"
+                        : trend === "bad"
+                        ? "border-red-500/40 bg-red-500/10"
+                        : "border-primary/40 bg-primary/10"
+                    }`}
+                  >
+                    <span className="relative flex size-2">
+                      <span
+                        className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${
+                          trend === "good" ? "bg-emerald-500" : trend === "bad" ? "bg-red-500" : "bg-primary"
+                        }`}
+                      />
+                      <span
+                        className={`relative inline-flex size-2 rounded-full ${
+                          trend === "good" ? "bg-emerald-500" : trend === "bad" ? "bg-red-500" : "bg-primary"
+                        }`}
+                      />
+                    </span>
+                    <span
+                      className={`font-mono text-sm font-bold ${
+                        trend === "good" ? "text-emerald-500" : trend === "bad" ? "text-red-500" : "text-primary"
+                      }`}
+                      dir="ltr"
+                    >
+                      {usesMultiply
+                        ? `1 ${fromCurrency.code} = ${formatRate(rate.rate)} ${toCurrency.code}`
+                        : `1 ${toCurrency.code} = ${formatRate(rate.rate)} ${fromCurrency.code}`}
+                    </span>
+                    {trend && (
+                      <span className={`text-xs ${trend === "good" ? "text-emerald-500" : "text-red-500"}`}>
+                        {trend === "good" ? "▲ في صالحك" : "▼ اتراجع شوية"}
+                      </span>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
               )}
 
               <div className="mt-2.5 rounded-2xl border border-primary/20 bg-primary/5 p-4 text-center">
