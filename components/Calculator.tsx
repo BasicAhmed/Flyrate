@@ -69,19 +69,17 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
   // pair multiplies instead of dividing (see lib/corridors.ts + lib/rates.ts).
   const usesMultiply = toCurrency ? isMultiplyCorridor(fromCode, toCurrency.code) : false;
 
-  // Compares the last two history points to say whether the rate has moved
-  // in the customer's favor since yesterday. marketPrice going up is good
-  // for the customer on the multiply leg of a pair, bad on the divide leg
-  // (see lib/rates.ts computeRate) — same logic as the "1 X = Y Z" line.
-  const trend = useMemo<"good" | "bad" | null>(() => {
+  // Compares the last two history points for this pair's market price.
+  // Fixed convention regardless of direction: price went up = red (زيادة),
+  // price went down = green (انخفاض) — same as the rest of the site's
+  // trend colors.
+  const trend = useMemo<"up" | "down" | null>(() => {
     if (history.length < 2) return null;
     const prev = history[history.length - 2].marketPrice;
     const latest = history[history.length - 1].marketPrice;
     if (prev === latest) return null;
-    const marketWentUp = latest > prev;
-    const goodForCustomer = usesMultiply ? marketWentUp : !marketWentUp;
-    return goodForCustomer ? "good" : "bad";
-  }, [history, usesMultiply]);
+    return latest > prev ? "up" : "down";
+  }, [history]);
 
   // "send" mode: student knows what they're sending (fromCurrency amount).
   // "receive" mode: student knows what they need the recipient to get (toCurrency amount).
@@ -138,7 +136,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
       const rateLine = usesMultiply
         ? `1 ${fromCurrency.code} = ${formatRate(rate.rate)} ${toCurrency.code}`
         : `1 ${toCurrency.code} = ${formatRate(rate.rate)} ${fromCurrency.code}`;
-      const trendLabel = trend === "good" ? "▲ زيادة" : trend === "bad" ? "▼ انخفاض" : undefined;
+      const trendLabel = trend === "up" ? "▲ زيادة" : trend === "down" ? "▼ انخفاض" : undefined;
       const updatedCaption = rate.updatedAt
         ? `آخر تحديث للسعر: ${formatRelativeTime(rate.updatedAt)}`
         : undefined;
@@ -152,7 +150,8 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
         amountReceived: amountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 }),
         rateLine,
         trendLabel,
-        trendColor: trend ?? "neutral",
+        // shareCard's "good" slot renders emerald, "bad" renders red — up=red, down=green here.
+        trendColor: trend === "up" ? "bad" : trend === "down" ? "good" : "neutral",
         updatedCaption,
       });
 
@@ -355,28 +354,28 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ duration: 0.25 }}
                     className={`mt-3 flex items-center justify-center gap-2 rounded-xl border px-3 py-2 ${
-                      trend === "good"
-                        ? "border-emerald-500/40 bg-emerald-500/10"
-                        : trend === "bad"
+                      trend === "up"
                         ? "border-red-500/40 bg-red-500/10"
+                        : trend === "down"
+                        ? "border-emerald-500/40 bg-emerald-500/10"
                         : "border-primary/40 bg-primary/10"
                     }`}
                   >
                     <span className="relative flex size-2">
                       <span
                         className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${
-                          trend === "good" ? "bg-emerald-500" : trend === "bad" ? "bg-red-500" : "bg-primary"
+                          trend === "up" ? "bg-red-500" : trend === "down" ? "bg-emerald-500" : "bg-primary"
                         }`}
                       />
                       <span
                         className={`relative inline-flex size-2 rounded-full ${
-                          trend === "good" ? "bg-emerald-500" : trend === "bad" ? "bg-red-500" : "bg-primary"
+                          trend === "up" ? "bg-red-500" : trend === "down" ? "bg-emerald-500" : "bg-primary"
                         }`}
                       />
                     </span>
                     <span
                       className={`font-mono text-sm font-bold ${
-                        trend === "good" ? "text-emerald-500" : trend === "bad" ? "text-red-500" : "text-primary"
+                        trend === "up" ? "text-red-500" : trend === "down" ? "text-emerald-500" : "text-primary"
                       }`}
                       dir="ltr"
                     >
@@ -385,8 +384,8 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                         : `1 ${toCurrency.code} = ${formatRate(rate.rate)} ${fromCurrency.code}`}
                     </span>
                     {trend && (
-                      <span className={`text-xs ${trend === "good" ? "text-emerald-500" : "text-red-500"}`}>
-                        {trend === "good" ? "▲ زيادة" : "▼ انخفاض"}
+                      <span className={`text-xs ${trend === "up" ? "text-red-500" : "text-emerald-500"}`}>
+                        {trend === "up" ? "▲ زيادة" : "▼ انخفاض"}
                       </span>
                     )}
                   </motion.div>
