@@ -170,7 +170,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                   >
                     {FROM_CURRENCIES.map((c) => (
                       <option key={c.code} value={c.code}>
-                        {c.flag} {c.name} ({c.code})
+                        {c.name} ({c.code})
                       </option>
                     ))}
                   </select>
@@ -204,7 +204,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                   >
                     {currentToOptions.map((c) => (
                       <option key={c.code} value={c.code}>
-                        {c.flag} {c.name} ({c.code})
+                        {c.name} ({c.code})
                       </option>
                     ))}
                   </select>
