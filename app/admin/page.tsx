@@ -10,14 +10,12 @@ import {
 import { auth, firebaseEnabled } from "@/lib/firebase";
 import {
   getRatesWithMargin,
-  setMarketPrice,
   setPairMargin,
   computeRate,
   updateRatesFromLiveFx,
   type RateRow,
 } from "@/lib/rates";
-import { appendRateHistory } from "@/lib/rateHistory";
-import { formatRate } from "@/lib/format";
+import { formatRate, formatSmart } from "@/lib/format";
 import { formatRelativeTime } from "@/lib/relativeTime";
 import { getDailyTarget, setDailyTarget, setMarginPercent } from "@/lib/settings";
 import { addSale, getRecentSales, type SaleEntry } from "@/lib/sales";
@@ -55,7 +53,6 @@ export default function AdminPage() {
   const [marginInput, setMarginInput] = useState("3.5");
   const [savingMargin, setSavingMargin] = useState(false);
   const [rates, setRates] = useState<RateRow[]>([]);
-  const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
   const [marginInputs, setMarginInputs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -203,34 +200,20 @@ export default function AdminPage() {
     const row = rates.find((r) => r.from === a && r.to === b);
     if (!row) return;
 
-    const priceRaw = priceInputs[key];
-    const newPrice = priceRaw !== undefined && priceRaw !== "" ? parseFloat(priceRaw) : row.marketPrice;
-
+    // Market price is only ever set by the automated FX update now — this
+    // button just saves the margin override for this pair.
     const marginRaw = marginInputs[key];
-    const hasMarginInput = marginRaw !== undefined;
-    const newMarginOverride = hasMarginInput ? (marginRaw.trim() === "" ? null : parseFloat(marginRaw)) : undefined;
+    const newMarginOverride = marginRaw === undefined || marginRaw.trim() === "" ? null : parseFloat(marginRaw);
 
     setSaving(key);
     setSaveError(null);
     try {
-      const jobs: Promise<unknown>[] = [setMarketPrice(a, b, newPrice, row.sdgSource)];
-      if (newMarginOverride !== undefined) {
-        jobs.push(setPairMargin(a, b, newMarginOverride));
-      }
-      await Promise.all(jobs);
-      appendRateHistory(a, b, newPrice); // best-effort, don't block the UI on it
-
-      const effectiveMargin = newMarginOverride === null ? margin : newMarginOverride ?? row.marginOverride ?? margin;
+      await setPairMargin(a, b, newMarginOverride);
+      const effectiveMargin = newMarginOverride ?? margin;
       patchRatePair(a, b, {
-        marketPrice: newPrice,
         marginPercent: effectiveMargin,
-        marginOverride: newMarginOverride === null ? undefined : newMarginOverride ?? row.marginOverride,
+        marginOverride: newMarginOverride ?? undefined,
         updatedAt: new Date().toISOString(),
-      });
-      setPriceInputs((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
       });
       setMarginInputs((prev) => {
         const next = { ...prev };
@@ -360,7 +343,6 @@ export default function AdminPage() {
                   const fromC = CURRENCIES[a];
                   const toC = CURRENCIES[b];
                   const key = `${a}_${b}`;
-                  const priceValue = priceInputs[key] ?? String(row.marketPrice);
                   const marginValue = marginInputs[key] ?? (row.marginOverride != null ? String(row.marginOverride) : "");
                   const isSdg = a === "SDG" || b === "SDG";
 
@@ -383,13 +365,13 @@ export default function AdminPage() {
                         <div className="flex items-center justify-between">
                           <span className="text-muted">{a} → {b}</span>
                           <span className="font-mono font-semibold text-primary">
-                            {formatRate(amountPerUnit(a, b, row.marketPrice, row.marginPercent))}
+                            {formatSmart(amountPerUnit(a, b, row.marketPrice, row.marginPercent))}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-muted">{b} → {a}</span>
                           <span className="font-mono font-semibold text-primary">
-                            {formatRate(amountPerUnit(b, a, row.marketPrice, row.marginPercent))}
+                            {formatSmart(amountPerUnit(b, a, row.marketPrice, row.marginPercent))}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -406,28 +388,16 @@ export default function AdminPage() {
                         )}
                       </div>
 
-                      <div className="mt-3 grid grid-cols-2 gap-2" dir="ltr">
-                        <div>
-                          <label className="mb-1 block text-[10px] text-subtle">السعر</label>
-                          <input
-                            type="number"
-                            step="any"
-                            value={priceValue}
-                            onChange={(e) => setPriceInputs((prev) => ({ ...prev, [key]: e.target.value }))}
-                            className="w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-center font-mono text-sm text-ink"
-                          />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-[10px] text-subtle">الهامش %</label>
-                          <input
-                            type="number"
-                            step="any"
-                            value={marginValue}
-                            onChange={(e) => setMarginInputs((prev) => ({ ...prev, [key]: e.target.value }))}
-                            placeholder={String(margin)}
-                            className="w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-center font-mono text-sm text-ink"
-                          />
-                        </div>
+                      <div className="mt-3" dir="ltr">
+                        <label className="mb-1 block text-[10px] text-subtle">الهامش %</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={marginValue}
+                          onChange={(e) => setMarginInputs((prev) => ({ ...prev, [key]: e.target.value }))}
+                          placeholder={String(margin)}
+                          className="w-full rounded-lg border border-border bg-surface2 px-2.5 py-2 text-center font-mono text-sm text-ink"
+                        />
                       </div>
 
                       <button
