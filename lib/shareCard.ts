@@ -1,3 +1,8 @@
+export interface ShareCardHistoryPoint {
+  date: string;
+  marketPrice: number;
+}
+
 export interface ShareCardParams {
   fromFlag: string;
   fromCode: string;
@@ -9,10 +14,10 @@ export interface ShareCardParams {
   trendLabel?: string; // e.g. "▲ زيادة" or "▼ انخفاض"
   trendColor: "good" | "bad" | "neutral"; // "good" renders emerald, "bad" renders red
   updatedCaption?: string; // e.g. "آخر تحديث للسعر: منذ 3 ساعة"
+  history?: ShareCardHistoryPoint[]; // last ~30 days, oldest first — same data as the in-app chart
 }
 
 const WIDTH = 1000;
-const HEIGHT = 1090;
 
 const COLORS = {
   bg: "#0A0A0B",
@@ -30,7 +35,7 @@ const COLORS = {
 async function loadFonts() {
   const specs = [
     "700 44px 'IBM Plex Sans Arabic'",
-    "600 40px 'IBM Plex Sans Arabic'",
+    "600 42px 'IBM Plex Sans Arabic'",
     "600 34px 'IBM Plex Sans Arabic'",
     "500 30px 'IBM Plex Sans Arabic'",
     "500 26px 'IBM Plex Sans Arabic'",
@@ -139,9 +144,112 @@ function drawCurrencyChip(
   return chipWidth;
 }
 
+/** Subtle repeating dot texture so the background isn't perfectly flat. */
+function drawTexture(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  ctx.fillStyle = "rgba(255,255,255,0.035)";
+  const spacing = 34;
+  for (let y = spacing; y < height; y += spacing) {
+    for (let x = spacing; x < width; x += spacing) {
+      ctx.beginPath();
+      ctx.arc(x, y, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+/** Compact line chart of recent market-price history, same data source as
+ *  the in-app RateHistoryChart. */
+function drawSparkline(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  points: ShareCardHistoryPoint[],
+  color: string
+) {
+  const values = points.map((p) => p.marketPrice);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const coords = points.map((p, i) => ({
+    x: x + (i / (points.length - 1)) * w,
+    y: y + (1 - (p.marketPrice - min) / range) * h,
+  }));
+
+  ctx.beginPath();
+  coords.forEach((c, i) => (i === 0 ? ctx.moveTo(c.x, c.y) : ctx.lineTo(c.x, c.y)));
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+
+  const last = coords[coords.length - 1];
+  ctx.beginPath();
+  ctx.fillStyle = color;
+  ctx.arc(last.x, last.y, 5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+async function createQrCanvas(text: string, size: number): Promise<HTMLCanvasElement | null> {
+  try {
+    const mod = await import("qrcode-generator");
+    const qrcode = mod.default;
+    const qr = qrcode(0, "M");
+    qr.addData(text);
+    qr.make();
+    const count = qr.getModuleCount();
+    const cellSize = Math.max(1, Math.floor(size / count));
+    const canvas = document.createElement("canvas");
+    canvas.width = cellSize * count;
+    canvas.height = cellSize * count;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#0A0A0B";
+    for (let row = 0; row < count; row++) {
+      for (let col = 0; col < count; col++) {
+        if (qr.isDark(row, col)) {
+          ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
+        }
+      }
+    }
+    return canvas;
+  } catch {
+    return null; // QR is a nice-to-have — never block the card on it
+  }
+}
+
 export async function createShareCardBlob(params: ShareCardParams): Promise<Blob | null> {
   await loadFonts();
-  const logo = await loadImage("/logo-icon.png");
+  const [logo, qrCanvas] = await Promise.all([
+    loadImage("/logo-icon.png"),
+    createQrCanvas("https://flyrate.exchange", 480),
+  ]);
+
+  const hasHistory = (params.history?.length ?? 0) >= 2;
+
+  // Layout is computed top-down so every section's position depends on the
+  // one before it — no fixed "HEIGHT minus a guess" offsets that can leave
+  // dead space or clip content.
+  const panelY = 330;
+  const panelX = 90;
+  const panelW = WIDTH - 180;
+  const sparklineTop = panelY + 300;
+  const sparklineH = 70;
+  const pillHeight = 62;
+  const pillY = panelY + 300 + sparklineH + 24;
+  const panelH = pillY + pillHeight + 34 - panelY;
+  const panelBottom = panelY + panelH;
+  const captionY = panelBottom + 56;
+  const qrY = captionY + 40;
+  const qrSize = 150;
+  const qrLabelY = qrY + qrSize + 34;
+  const dividerY = qrLabelY + 36;
+  const ctaTop = dividerY + 40;
+  const ctaHeight = 100;
+  const HEIGHT = ctaTop + ctaHeight + 100;
 
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
@@ -161,6 +269,8 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
   glow.addColorStop(1, "rgba(254,82,0,0)");
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  drawTexture(ctx, WIDTH, HEIGHT);
 
   // Outer frame
   ctx.strokeStyle = COLORS.border;
@@ -210,14 +320,9 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
 
   ctx.fillStyle = COLORS.muted;
   ctx.font = "600 30px 'IBM Plex Sans Arabic', sans-serif";
-  ctx.direction = "ltr";
   ctx.fillText("⇄", WIDTH / 2, chipY + 44);
 
-  // Result panel (mirrors the in-app orange-tinted card)
-  const panelX = 90;
-  const panelY = 330;
-  const panelW = WIDTH - 180;
-  const panelH = 400;
+  // Result panel
   ctx.fillStyle = "rgba(254,82,0,0.06)";
   ctx.strokeStyle = "rgba(254,82,0,0.22)";
   ctx.lineWidth = 2;
@@ -225,7 +330,6 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
   ctx.fill();
   ctx.stroke();
 
-  ctx.direction = "rtl";
   ctx.font = "500 30px 'IBM Plex Sans Arabic', sans-serif";
   ctx.fillStyle = COLORS.subtle;
   ctx.fillText("المستلم يستلم", WIDTH / 2, panelY + 78);
@@ -248,7 +352,22 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
   ctx.font = `500 ${subtitleSize}px 'IBM Plex Sans Arabic', sans-serif`;
   ctx.fillText(subtitleText, WIDTH / 2, panelY + 268);
 
-  // Rate pill inside the panel footer area
+  // Sparkline — recent price trend, same data as the in-app chart
+  if (hasHistory && params.history) {
+    const sparkX = panelX + 60;
+    const sparkW = panelW - 120;
+    drawSparkline(ctx, sparkX, sparklineTop, sparkW, sparklineH, params.history, pillColor);
+    ctx.font = "500 22px 'IBM Plex Sans Arabic', sans-serif";
+    ctx.fillStyle = COLORS.subtle;
+    ctx.direction = "ltr";
+    ctx.textAlign = "left";
+    ctx.fillText(params.history[0].date, sparkX, sparklineTop + sparklineH + 24);
+    ctx.textAlign = "right";
+    ctx.fillText(params.history[params.history.length - 1].date, sparkX + sparkW, sparklineTop + sparklineH + 24);
+    ctx.textAlign = "center";
+  }
+
+  // Rate pill
   ctx.font = "600 36px 'IBM Plex Mono', monospace";
   const rateTextWidth = ctx.measureText(params.rateLine).width;
   ctx.font = "500 26px 'IBM Plex Sans Arabic', sans-serif";
@@ -256,9 +375,7 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
 
   const pillContentWidth = rateTextWidth + (trendTextWidth ? trendTextWidth + 24 : 0);
   const pillWidth = Math.min(pillContentWidth + 84, panelW - 40);
-  const pillHeight = 62;
   const pillX = WIDTH / 2 - pillWidth / 2;
-  const pillY = panelY + panelH - pillHeight - 34;
 
   ctx.fillStyle = `${pillColor}1F`;
   ctx.strokeStyle = `${pillColor}66`;
@@ -286,7 +403,6 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
   ctx.textAlign = "center";
 
   // Updated caption, below the panel
-  const captionY = panelY + panelH + 56;
   if (params.updatedCaption) {
     ctx.direction = "rtl";
     ctx.font = "500 26px 'IBM Plex Sans Arabic', sans-serif";
@@ -294,8 +410,22 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
     ctx.fillText(params.updatedCaption, WIDTH / 2, captionY);
   }
 
+  // QR code — links straight to the live site
+  if (qrCanvas) {
+    const qrX = WIDTH / 2 - qrSize / 2;
+    ctx.fillStyle = "#FFFFFF";
+    roundRect(ctx, qrX, qrY, qrSize, qrSize, 16);
+    ctx.fill();
+    const pad = qrSize * 0.09;
+    ctx.drawImage(qrCanvas, qrX + pad, qrY + pad, qrSize - pad * 2, qrSize - pad * 2);
+
+    ctx.direction = "ltr";
+    ctx.font = "500 24px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = COLORS.subtle;
+    ctx.fillText("flyrate.exchange", WIDTH / 2, qrLabelY);
+  }
+
   // Divider
-  const dividerY = captionY + 48;
   ctx.strokeStyle = COLORS.border;
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -304,8 +434,6 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
   ctx.stroke();
 
   // Footer CTA bar
-  const ctaTop = dividerY + 40;
-  const ctaHeight = 100;
   ctx.fillStyle = COLORS.primary;
   roundRect(ctx, 90, ctaTop, WIDTH - 180, ctaHeight, 50);
   ctx.fill();
@@ -313,12 +441,6 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
   ctx.font = "600 36px 'IBM Plex Sans Arabic', sans-serif";
   ctx.fillStyle = COLORS.bg;
   ctx.fillText("حوّل فلوسك على FlyRate", WIDTH / 2, ctaTop + ctaHeight / 2 + 13);
-
-  // Domain, small, under the CTA bar
-  ctx.direction = "ltr";
-  ctx.font = "500 24px 'IBM Plex Mono', monospace";
-  ctx.fillStyle = COLORS.subtle;
-  ctx.fillText("flyrate.exchange", WIDTH / 2, ctaTop + ctaHeight + 56);
 
   return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), "image/png", 0.95));
 }

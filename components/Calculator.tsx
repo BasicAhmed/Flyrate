@@ -153,6 +153,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
         // shareCard's "good" slot renders emerald, "bad" renders red — up=red, down=green here.
         trendColor: trend === "up" ? "bad" : trend === "down" ? "good" : "neutral",
         updatedCaption,
+        history,
       });
 
       if (!blob) throw new Error("canvas unsupported");
