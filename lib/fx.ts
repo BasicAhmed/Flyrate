@@ -12,18 +12,20 @@ async function fetchUsdBaseRates(): Promise<Record<string, number>> {
 }
 
 /** Binance P2P doesn't publish an official public API — this mirrors the
- *  exact request Binance's own web app makes for the "Buy USDT with SDG"
- *  list, averaging the first 4 offers (lowest price first), same as Ahmed
- *  checks manually. If Binance changes this endpoint or has no SDG ads,
- *  this throws and SDG pairs are simply skipped for that run — whatever
- *  price is already stored stays in place. */
+ *  request Binance's own web app makes for the "Buy USDT with SDG" list.
+ *  Skips the first 2 offers and averages ads #3–#7: sellers sometimes push
+ *  fake/low-volume ads to the very top just to look cheapest, so the top 1-2
+ *  aren't reliable — this window is steadier. If Binance changes this
+ *  endpoint, has too few SDG ads, or has no SDG ads at all, this throws and
+ *  SDG pairs are simply skipped for that run — whatever price is already
+ *  stored stays in place. */
 async function fetchSdgPerUsdt(): Promise<{ avg: number; prices: number[] }> {
   const res = await fetch(BINANCE_P2P_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       page: 1,
-      rows: 4,
+      rows: 7,
       payTypes: [],
       asset: "USDT",
       tradeType: "BUY",
@@ -38,8 +40,11 @@ async function fetchSdgPerUsdt(): Promise<{ avg: number; prices: number[] }> {
   if (!Array.isArray(ads) || ads.length === 0) {
     throw new Error("Binance P2P ما رجّع أي عروض USDT/SDG");
   }
-  const prices = ads
-    .slice(0, 4)
+  // Ads #3–#7 (skip the first 2). If Binance has fewer ads than that, fall
+  // back to whatever's available past the first 2, and if there's nothing
+  // past the first 2 either, just use everything rather than fail outright.
+  const windowAds = ads.length > 2 ? ads.slice(2, 7) : ads;
+  const prices = windowAds
     .map((item: any) => parseFloat(item?.adv?.price))
     .filter((n: number) => !Number.isNaN(n));
   if (prices.length === 0) throw new Error("تعذر قراءة أسعار Binance P2P");
