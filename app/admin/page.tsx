@@ -11,6 +11,7 @@ import { auth, firebaseEnabled } from "@/lib/firebase";
 import {
   getRatesWithMargin,
   setPairMargin,
+  setSdgUsdtOverride,
   computeRate,
   updateRatesFromLiveFx,
   type RateRow,
@@ -49,6 +50,8 @@ export default function AdminPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fxUpdating, setFxUpdating] = useState(false);
   const [fxMessage, setFxMessage] = useState<string | null>(null);
+  const [sdgOverrideInput, setSdgOverrideInput] = useState("");
+  const [savingSdgOverride, setSavingSdgOverride] = useState(false);
 
   // Profit tab state
   const [profitLoaded, setProfitLoaded] = useState(false);
@@ -315,6 +318,60 @@ export default function AdminPage() {
                   {fxUpdating ? "جارٍ التحديث…" : "🔄 تحديث الآن"}
                 </button>
               </div>
+
+              {(() => {
+                const currentSdgUsdt = rates.find(
+                  (r) => (r.from === "SDG" || r.to === "SDG") && r.sdgSource
+                )?.sdgSource?.usdtToSdg;
+                if (currentSdgUsdt === undefined) return null;
+                return (
+                  <div className="mt-3 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface p-4">
+                    <span className="text-sm font-medium text-ink">سعر USDT/SDG المستخدم</span>
+                    <div className="flex items-center gap-2" dir="ltr">
+                      <input
+                        type="number"
+                        step="any"
+                        value={sdgOverrideInput}
+                        onChange={(e) => setSdgOverrideInput(e.target.value)}
+                        placeholder={String(currentSdgUsdt)}
+                        className="w-28 rounded-lg border border-border bg-surface2 px-2.5 py-1.5 text-sm text-ink"
+                      />
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const val = parseFloat(sdgOverrideInput);
+                        if (!val) return;
+                        setSavingSdgOverride(true);
+                        setSaveError(null);
+                        try {
+                          await setSdgUsdtOverride(val);
+                          setRates((prev) =>
+                            prev.map((r) => {
+                              if ((r.from !== "SDG" && r.to !== "SDG") || !r.sdgSource) return r;
+                              const ratio = val / r.sdgSource.usdtToSdg;
+                              const newMarketPrice = r.marketPrice * ratio;
+                              return {
+                                ...r,
+                                marketPrice: newMarketPrice,
+                                rate: computeRate(r.from, r.to, newMarketPrice, r.marginPercent),
+                                sdgSource: { usdtToSdg: val, prices: [] },
+                                updatedAt: new Date().toISOString(),
+                              };
+                            })
+                          );
+                          setSdgOverrideInput("");
+                        } catch (err) {
+                          setSaveError(err instanceof Error ? err.message : String(err));
+                        }
+                        setSavingSdgOverride(false);
+                      }}
+                      className="mr-auto rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-ink"
+                    >
+                      {savingSdgOverride ? "…" : "حفظ"}
+                    </button>
+                  </div>
+                );
+              })()}
 
               {fxMessage && <p className="mt-2 text-xs text-subtle">{fxMessage}</p>}
               {saveError && (

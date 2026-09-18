@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, setDoc, deleteField, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, getDoc, doc, setDoc, deleteField, serverTimestamp } from "firebase/firestore";
 import { db, firebaseEnabled } from "./firebase";
 import { PAIRS, pairKey, isForwardDirection, type CurrencyCode } from "./corridors";
 import { getMarginPercent } from "./settings";
@@ -185,6 +185,50 @@ export async function setMarketPrice(
     },
     { merge: true }
   );
+}
+
+/** Manually overrides the shared USDT/SDG price used across every SDG
+ *  pair (e.g. Ahmed found a cheaper source than Binance P2P that day).
+ *  Rescales each SDG pair's stored marketPrice proportionally — the ratio
+ *  of new-to-old USDT/SDG applies equally to all of them, since marketPrice
+ *  = usdtToSdg / (other currency's USD rate), and the other currency's rate
+ *  hasn't changed. Only rescales pairs that already have a baseline
+ *  (sdgUsdtToSdg from a previous auto-update) — a pair that's never been
+ *  auto-updated yet has nothing to rescale from, so it's left alone. */
+export async function setSdgUsdtOverride(newUsdtToSdg: number): Promise<void> {
+  if (!firebaseEnabled || !db) {
+    throw new Error("Firebase is not configured — see .env.example.");
+  }
+  const sdgPairs = PAIRS.filter((p) => p.a === "SDG" || p.b === "SDG");
+
+  const jobs = sdgPairs.map(async ({ a, b }) => {
+    const key = pairKey(a, b);
+    const snap = await getDoc(doc(db!, "rates", key));
+    if (!snap.exists()) return;
+    const data = snap.data();
+    const oldMarketPrice = data.marketPrice;
+    const oldUsdtToSdg = data.sdgUsdtToSdg;
+    if (typeof oldMarketPrice !== "number" || typeof oldUsdtToSdg !== "number" || oldUsdtToSdg === 0) {
+      return; // no baseline yet — leave this pair untouched
+    }
+    const newMarketPrice = oldMarketPrice * (newUsdtToSdg / oldUsdtToSdg);
+    await setDoc(
+      doc(db!, "rates", key),
+      {
+        from: a,
+        to: b,
+        marketPrice: newMarketPrice,
+        updatedAt: serverTimestamp(),
+        sdgUsdtToSdg: newUsdtToSdg,
+        sdgPrices: [],
+        source: "manual-override",
+      },
+      { merge: true }
+    );
+    await appendRateHistory(a, b, newMarketPrice);
+  });
+
+  await Promise.all(jobs);
 }
 
 /** Sets (or clears) a pair-specific margin override, independent of market
