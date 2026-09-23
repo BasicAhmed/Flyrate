@@ -7,7 +7,8 @@ import { FROM_CURRENCIES, validToCurrencies, CURRENCIES, isMultiplyCorridor, typ
 import { formatRate } from "@/lib/format";
 import { formatRelativeTime } from "@/lib/relativeTime";
 import { createShareCardBlob } from "@/lib/shareCard";
-import type { RateRow } from "@/lib/rates";
+import { convertBetween, type RateRow } from "@/lib/rates";
+import { DISCOUNT_THRESHOLD_USDT, DISCOUNT_AMOUNT_USDT } from "@/lib/promotions";
 import { getRateHistory, type RateHistoryPoint } from "@/lib/rateHistory";
 import { buildOrderMessage, whatsappLink } from "@/lib/whatsapp";
 import RateHistoryChart from "./RateHistoryChart";
@@ -103,6 +104,14 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
   const activeCurrency = mode === "send" ? fromCurrency : toCurrency;
   const quickAmounts = activeCurrency ? QUICK_AMOUNTS[activeCurrency.code] : [];
 
+  // Volume discount: send amount worth ≥1500 USDT gets a flat 15 USDT bonus,
+  // added on top of what they'd normally receive.
+  const usdtEquivalent = amountSent > 0 ? convertBetween(amountSent, fromCode, "USDT", rates) : null;
+  const discountApplies = usdtEquivalent !== null && usdtEquivalent >= DISCOUNT_THRESHOLD_USDT;
+  const discountBonus =
+    discountApplies && toCurrency ? convertBetween(DISCOUNT_AMOUNT_USDT, "USDT", toCurrency.code, rates) ?? 0 : 0;
+  const finalAmountReceived = amountReceived + discountBonus;
+
   function handleFromChange(code: CurrencyCode) {
     setFromCode(code);
     const next = validToCurrencies(code);
@@ -121,10 +130,13 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
   function orderNow() {
     if (!rate || !toCurrency) return;
     const message = buildOrderMessage({
-      amountReceived: amountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 }),
+      amountReceived: finalAmountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 }),
       toCurrency: toCurrency.code,
       amountSent: amountSent.toLocaleString("en-US", { maximumFractionDigits: 2 }),
       fromCurrency: fromCurrency.code,
+      discountNote: discountApplies
+        ? `(مؤهل لخصم ${DISCOUNT_AMOUNT_USDT} USDT — التحويل أكتر من ${DISCOUNT_THRESHOLD_USDT} USDT)`
+        : undefined,
     });
     window.open(whatsappLink(message), "_blank", "noopener,noreferrer");
   }
@@ -147,7 +159,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
         toFlag: toCurrency.flag,
         toCode: toCurrency.code,
         amountSent: amountSent.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-        amountReceived: amountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 }),
+        amountReceived: finalAmountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 }),
         rateLine,
         trendLabel,
         // shareCard's "good" slot renders emerald, "bad" renders red — up=red, down=green here.
@@ -180,7 +192,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
       // canvas/share unavailable — fall back to a plain text share/copy
       const text = [
         `FlyRate — ${fromCurrency.code} ⇄ ${toCurrency.code}`,
-        `${amountSent.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${fromCurrency.code} = ${amountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${toCurrency.code}`,
+        `${amountSent.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${fromCurrency.code} = ${finalAmountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${toCurrency.code}`,
       ].join("\n");
       if (navigator.share) {
         try {
@@ -428,7 +440,7 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                 </div>
                 <AnimatePresence mode="wait">
                   <motion.p
-                    key={`${amountReceived}-${toCurrency?.code}`}
+                    key={`${finalAmountReceived}-${toCurrency?.code}`}
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.2 }}
@@ -436,13 +448,18 @@ export default function Calculator({ rates }: { rates: RateRow[] }) {
                     dir="ltr"
                   >
                     {rate
-                      ? `${amountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${toCurrency.code}`
+                      ? `${finalAmountReceived.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${toCurrency.code}`
                       : "اختر ممر التحويل"}
                   </motion.p>
                 </AnimatePresence>
                 <p className="mt-1.5 font-mono text-sm text-muted" dir="ltr">
                   مقابل {amountSent.toLocaleString("en-US", { maximumFractionDigits: 2 })} {fromCurrency.code}
                 </p>
+                {discountApplies && (
+                  <p className="mt-1.5 text-xs font-semibold text-emerald-500">
+                    🎉 خصم {DISCOUNT_AMOUNT_USDT} USDT مضاف — تحويل أكتر من {DISCOUNT_THRESHOLD_USDT} USDT
+                  </p>
+                )}
               </div>
 
               {toCurrency && (

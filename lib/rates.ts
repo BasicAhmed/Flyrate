@@ -1,6 +1,6 @@
 import { collection, getDocs, getDoc, doc, setDoc, deleteField, serverTimestamp } from "firebase/firestore";
 import { db, firebaseEnabled } from "./firebase";
-import { PAIRS, pairKey, isForwardDirection, type CurrencyCode } from "./corridors";
+import { PAIRS, pairKey, isForwardDirection, isMultiplyCorridor, type CurrencyCode } from "./corridors";
 import { getMarginPercent } from "./settings";
 import { roundForDisplay } from "./format";
 import { appendRateHistory } from "./rateHistory";
@@ -298,4 +298,33 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   await Promise.all(jobs);
 
   return { updated, skipped };
+}
+
+/** Converts an amount between any two of FlyRate's currencies, using
+ *  whatever pairs are available. Uses the direct pair if one exists;
+ *  otherwise bridges through ZAR, since ZAR has a direct pair to every
+ *  other currency in the corridor graph. Returns null only if a required
+ *  leg genuinely isn't priced yet (shouldn't happen once the site has real
+ *  data, but this is customer-facing math so it fails safe, not silently
+ *  wrong). */
+export function convertBetween(
+  amount: number,
+  from: CurrencyCode,
+  to: CurrencyCode,
+  rates: RateRow[]
+): number | null {
+  if (from === to) return amount;
+
+  const applyLeg = (amt: number, legFrom: CurrencyCode, legTo: CurrencyCode): number | null => {
+    const row = rates.find((r) => r.from === legFrom && r.to === legTo);
+    if (!row) return null;
+    return isMultiplyCorridor(legFrom, legTo) ? amt * row.rate : amt / row.rate;
+  };
+
+  const direct = applyLeg(amount, from, to);
+  if (direct !== null) return direct;
+
+  const viaZar = applyLeg(amount, from, "ZAR");
+  if (viaZar === null) return null;
+  return applyLeg(viaZar, "ZAR", to);
 }

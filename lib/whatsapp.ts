@@ -5,6 +5,7 @@ export interface OrderDetails {
   toCurrency: string;
   amountSent: string;
   fromCurrency: string;
+  discountNote?: string;
 }
 
 export function buildOrderMessage(o: OrderDetails): string {
@@ -12,6 +13,7 @@ export function buildOrderMessage(o: OrderDetails): string {
     "سلام عليكم كيف الحال",
     `انا عاوز ${o.amountReceived} ${o.toCurrency}`,
     `و حاحول كده ${o.amountSent} ${o.fromCurrency}`,
+    ...(o.discountNote ? [o.discountNote] : []),
     "رسل لي رقم الحساب",
   ].join("\n");
 }
