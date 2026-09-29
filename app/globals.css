@@ -12,6 +12,10 @@
   --color-ink: 245 244 241;
   --color-muted: 154 154 158;
   --color-subtle: 110 110 115;
+  --color-primary: 254 82 0;
+  --color-accent: 255 154 61;
+  --shadow-rgb: 0 0 0;
+  --highlight-rgb: 255 255 255;
   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.4),
     0 12px 32px -16px rgba(0, 0, 0, 0.7);
   --shadow-raised: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 2px 4px rgba(0, 0, 0, 0.45),
@@ -19,6 +23,10 @@
 }
 
 .light {
+  --color-primary: 234 74 0;
+  --color-accent: 217 119 6;
+  --shadow-rgb: 40 30 20;
+  --highlight-rgb: 255 255 255;
   --shadow-card: 0 1px 2px rgba(20, 20, 25, 0.06), 0 8px 24px -12px rgba(20, 20, 25, 0.12);
   --shadow-raised: 0 2px 4px rgba(20, 20, 25, 0.06), 0 20px 40px -18px rgba(20, 20, 25, 0.18);
   color-scheme: light;
@@ -71,25 +79,25 @@
 
 /* Shared surfaces — one elevation language across the site and /admin */
 .card {
-  @apply rounded-2xl border border-border bg-surface;
-  box-shadow: var(--shadow-card);
+  @apply rounded-3xl border border-border/70 bg-surface shadow-card;
+}
+.card-sm {
+  @apply rounded-2xl border border-border/70 bg-surface shadow-soft;
 }
 .card-raised {
-  @apply rounded-3xl border border-border bg-surface;
-  box-shadow: var(--shadow-raised);
+  @apply rounded-3xl border border-border/70 bg-surface shadow-lift;
 }
 .field {
-  @apply w-full rounded-xl border border-border bg-surface2 px-3 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-subtle focus:border-primary;
+  @apply w-full rounded-xl border border-border bg-surface2 text-ink shadow-well outline-none transition-colors placeholder:text-subtle focus:border-primary focus:ring-4 focus:ring-primary/15;
 }
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-bg transition hover:bg-primary-hot disabled:cursor-not-allowed disabled:opacity-50;
+  @apply inline-flex items-center justify-center gap-2 rounded-full bg-primary font-semibold text-bg shadow-glow transition-all hover:-translate-y-px hover:brightness-110 active:translate-y-0 disabled:pointer-events-none disabled:opacity-40 disabled:shadow-none;
 }
 .btn-ghost {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface2 px-4 py-2.5 text-sm font-semibold text-ink transition hover:border-primary/60 disabled:opacity-50;
+  @apply inline-flex items-center justify-center gap-2 rounded-full border border-border bg-surface font-semibold text-ink shadow-soft transition-all hover:-translate-y-px hover:border-primary/60;
 }
 .btn-whatsapp {
-  @apply inline-flex items-center justify-center gap-2 rounded-full bg-[#25D366] font-semibold text-white transition hover:bg-[#1EBE5A] disabled:cursor-not-allowed disabled:opacity-40;
-  box-shadow: 0 10px 24px -10px rgba(37, 211, 102, 0.6);
+  @apply inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-b from-whatsapp to-whatsapp-dark font-bold text-white shadow-[0_1px_0_0_rgba(255,255,255,0.3)_inset,0_10px_28px_-8px_rgba(37,211,102,0.65)] transition-all hover:-translate-y-px hover:brightness-105 active:translate-y-0 disabled:pointer-events-none disabled:opacity-40 disabled:shadow-none;
 }
 
 /* Hide number-input spinners — amounts are typed, not stepped */
