@@ -1,4 +1,4 @@
-export type CurrencyCode = "SDG" | "ZAR" | "EGP" | "MYR" | "SAR" | "QAR" | "AED" | "USDT";
+export type CurrencyCode = "SDG" | "ZAR" | "EGP" | "MYR" | "SAR" | "QAR" | "AED" | "USDT" | "USD";
 
 export interface CurrencyInfo {
   code: CurrencyCode;
@@ -15,6 +15,7 @@ export const CURRENCIES: Record<CurrencyCode, CurrencyInfo> = {
   QAR: { code: "QAR", name: "قطر", flag: "🇶🇦" },
   AED: { code: "AED", name: "الإمارات", flag: "🇦🇪" },
   USDT: { code: "USDT", name: "USDT (تيثر)", flag: "₮" },
+  USD: { code: "USD", name: "أمريكا (دولار)", flag: "🇺🇸" },
 };
 
 export interface CurrencyPair {
@@ -45,6 +46,7 @@ export const PAIRS: CurrencyPair[] = [
   { a: "ZAR", b: "QAR" },
   { a: "ZAR", b: "AED" },
   { a: "ZAR", b: "USDT" },
+  { a: "MYR", b: "USD" },
 ];
 
 export function findPair(x: CurrencyCode, y: CurrencyCode): CurrencyPair | undefined {

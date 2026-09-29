@@ -18,10 +18,10 @@ const usd = (n: number, digits = 2) =>
   `$${n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 const num = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
-const CURRENCY_ORDER: CurrencyCode[] = ["MYR", "SDG", "ZAR", "USDT", "EGP", "SAR", "AED", "QAR"];
+const CURRENCY_ORDER: CurrencyCode[] = ["MYR", "SDG", "ZAR", "USDT", "USD", "EGP", "SAR", "AED", "QAR"];
 
 function flagFor(c: SaleEntry["currency"]) {
-  return c === "USD" ? "$" : CURRENCIES[c].flag;
+  return CURRENCIES[c as CurrencyCode]?.flag ?? "$";
 }
 
 /** Value of `amount` in USD at MARKET price (no margin), treating USDT = USD.
@@ -236,7 +236,7 @@ export default function ProfitTab({
         </div>
 
         <p className="mt-4 text-[11px] font-medium text-subtle">العملة اللي بعتها</p>
-        <div className="mt-1.5 grid grid-cols-4 gap-2 sm:grid-cols-8" dir="ltr">
+        <div className="mt-1.5 grid grid-cols-3 gap-2 sm:grid-cols-9" dir="ltr">
           {CURRENCY_ORDER.map((c) => (
             <button
               key={c}

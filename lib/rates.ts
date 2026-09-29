@@ -300,13 +300,33 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   return { updated, skipped };
 }
 
-/** Converts an amount between any two supported currencies, using
- *  whatever pairs are available. Uses the direct pair if one exists;
- *  otherwise bridges through ZAR, since ZAR has a direct pair to every
- *  other currency in the corridor graph. Returns null only if a required
- *  leg genuinely isn't priced yet (shouldn't happen once the site has real
- *  data, but this is customer-facing math so it fails safe, not silently
- *  wrong). */
+/** Shortest chain of corridors between two currencies (breadth-first), e.g.
+ *  USD → MYR → ZAR → USDT. Null if they aren't connected at all. */
+function corridorPath(from: CurrencyCode, to: CurrencyCode): CurrencyCode[] | null {
+  const prev = new Map<CurrencyCode, CurrencyCode>();
+  const seen = new Set<CurrencyCode>([from]);
+  const queue: CurrencyCode[] = [from];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    if (cur === to) break;
+    for (const p of PAIRS) {
+      const n = p.a === cur ? p.b : p.b === cur ? p.a : null;
+      if (!n || seen.has(n)) continue;
+      seen.add(n);
+      prev.set(n, cur);
+      queue.push(n);
+    }
+  }
+  if (!seen.has(to)) return null;
+  const path: CurrencyCode[] = [to];
+  while (path[0] !== from) path.unshift(prev.get(path[0])!);
+  return path;
+}
+
+/** Converts an amount between any two supported currencies at customer
+ *  rates, following the shortest corridor chain (direct pair if one
+ *  exists). Returns null only if a required leg isn't priced — customer-
+ *  facing math fails safe, not silently wrong. */
 export function convertBetween(
   amount: number,
   from: CurrencyCode,
@@ -314,19 +334,15 @@ export function convertBetween(
   rates: RateRow[]
 ): number | null {
   if (from === to) return amount;
-
-  const applyLeg = (amt: number, legFrom: CurrencyCode, legTo: CurrencyCode): number | null => {
-    const row = rates.find((r) => r.from === legFrom && r.to === legTo);
+  const path = corridorPath(from, to);
+  if (!path) return null;
+  let amt = amount;
+  for (let i = 0; i < path.length - 1; i++) {
+    const row = rates.find((r) => r.from === path[i] && r.to === path[i + 1]);
     if (!row) return null;
-    return isMultiplyCorridor(legFrom, legTo) ? amt * row.rate : amt / row.rate;
-  };
-
-  const direct = applyLeg(amount, from, to);
-  if (direct !== null) return direct;
-
-  const viaZar = applyLeg(amount, from, "ZAR");
-  if (viaZar === null) return null;
-  return applyLeg(viaZar, "ZAR", to);
+    amt = isMultiplyCorridor(path[i], path[i + 1]) ? amt * row.rate : amt / row.rate;
+  }
+  return amt;
 }
 
 /** Same routing as convertBetween, but at the fair mid-market price (no
@@ -340,19 +356,15 @@ export function convertMid(
   rates: RateRow[]
 ): number | null {
   if (from === to) return amount;
-
-  const applyLeg = (amt: number, legFrom: CurrencyCode, legTo: CurrencyCode): number | null => {
-    const row = rates.find((r) => r.from === legFrom && r.to === legTo);
+  const path = corridorPath(from, to);
+  if (!path) return null;
+  let amt = amount;
+  for (let i = 0; i < path.length - 1; i++) {
+    const row = rates.find((r) => r.from === path[i] && r.to === path[i + 1]);
     if (!row || !row.marketPrice) return null;
-    return isForwardDirection(legFrom, legTo) ? amt / row.marketPrice : amt * row.marketPrice;
-  };
-
-  const direct = applyLeg(amount, from, to);
-  if (direct !== null) return direct;
-
-  const viaZar = applyLeg(amount, from, "ZAR");
-  if (viaZar === null) return null;
-  return applyLeg(viaZar, "ZAR", to);
+    amt = isForwardDirection(path[i], path[i + 1]) ? amt / row.marketPrice : amt * row.marketPrice;
+  }
+  return amt;
 }
 
 /** Margin to book profit at when Ahmed records a sale in `currency` without

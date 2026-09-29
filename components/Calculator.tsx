@@ -36,6 +36,7 @@ const QUICK_AMOUNTS: Record<CurrencyCode, number[]> = {
   QAR: [200, 500, 2000],
   AED: [200, 500, 2000],
   USDT: [50, 100, 500],
+  USD: [100, 500, 1000],
 };
 
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });

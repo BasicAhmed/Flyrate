@@ -17,6 +17,7 @@
     { "from": "ZAR", "to": "SAR", "marketPrice": 4.832 },
     { "from": "ZAR", "to": "QAR", "marketPrice": 5.582 },
     { "from": "ZAR", "to": "AED", "marketPrice": 3.874 },
-    { "from": "ZAR", "to": "USDT", "marketPrice": 18.12 }
+    { "from": "ZAR", "to": "USDT", "marketPrice": 18.12 },
+    { "from": "MYR", "to": "USD", "marketPrice": 4.22 }
   ]
 }
