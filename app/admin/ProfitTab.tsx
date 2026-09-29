@@ -7,6 +7,7 @@ import { convertMid, type RateRow } from "@/lib/rates";
 import { getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, deleteSale, getSales, type SaleEntry } from "@/lib/sales";
 import { CURRENCIES, PAIRS, type CurrencyCode } from "@/lib/corridors";
+import CapitalCard from "./CapitalCard";
 
 function todayStr() {
   const d = new Date();
@@ -202,6 +203,8 @@ export default function ProfitTab({
 
   return (
     <div className="mt-5 space-y-4">
+      <CapitalCard sales={sales} today={today} onError={onError} />
+
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3">
         <Kpi
