@@ -1,11 +1,12 @@
-import { MessageCircle, Mail, Clock } from "lucide-react";
+import { Mail, Clock } from "lucide-react";
+import WhatsAppIcon from "./WhatsAppIcon";
 import { whatsappLink } from "@/lib/whatsapp";
 
 export default function Contact() {
   return (
     <section id="contact" className="border-t border-border py-20 sm:py-28">
       <div className="container-page">
-        <div className="grid gap-10 rounded-3xl border border-border bg-surface p-8 sm:p-12 lg:grid-cols-[1fr_1fr] lg:items-center">
+        <div className="grid gap-10 card-raised p-8 sm:p-12 lg:grid-cols-[1fr_1fr] lg:items-center">
           <div>
             <p className="eyebrow">تواصل معنا</p>
             <h2 className="section-heading mt-3">تكلم معنا مباشرة.</h2>
@@ -17,13 +18,13 @@ export default function Contact() {
 
           <div className="space-y-4">
             <a
-              href={whatsappLink("مرحباً FlyRate Exchange، عندي سؤال.")}
+              href={whatsappLink("السلام عليكم 👋\nعندي سؤال.")}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-4 rounded-xl border border-border bg-surface2 p-4 transition-colors hover:border-primary"
+              className="flex items-center gap-4 rounded-xl border border-[#25D366]/30 bg-[#25D366]/10 p-4 transition-colors hover:border-[#25D366]"
             >
-              <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
-                <MessageCircle size={20} />
+              <div className="rounded-lg bg-[#25D366] p-2.5 text-white">
+                <WhatsAppIcon size={20} />
               </div>
               <div>
                 <div className="text-sm font-semibold text-ink">واتساب</div>

@@ -300,7 +300,7 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   return { updated, skipped };
 }
 
-/** Converts an amount between any two of FlyRate's currencies, using
+/** Converts an amount between any two supported currencies, using
  *  whatever pairs are available. Uses the direct pair if one exists;
  *  otherwise bridges through ZAR, since ZAR has a direct pair to every
  *  other currency in the corridor graph. Returns null only if a required
@@ -327,4 +327,41 @@ export function convertBetween(
   const viaZar = applyLeg(amount, from, "ZAR");
   if (viaZar === null) return null;
   return applyLeg(viaZar, "ZAR", to);
+}
+
+/** Same routing as convertBetween, but at the fair mid-market price (no
+ *  margin) — used for bookkeeping, e.g. valuing today's MYR sales in USD.
+ *  USDT is treated as USD. marketPrice is "a per 1 b", so a→b divides and
+ *  b→a multiplies. */
+export function convertMid(
+  amount: number,
+  from: CurrencyCode,
+  to: CurrencyCode,
+  rates: RateRow[]
+): number | null {
+  if (from === to) return amount;
+
+  const applyLeg = (amt: number, legFrom: CurrencyCode, legTo: CurrencyCode): number | null => {
+    const row = rates.find((r) => r.from === legFrom && r.to === legTo);
+    if (!row || !row.marketPrice) return null;
+    return isForwardDirection(legFrom, legTo) ? amt / row.marketPrice : amt * row.marketPrice;
+  };
+
+  const direct = applyLeg(amount, from, to);
+  if (direct !== null) return direct;
+
+  const viaZar = applyLeg(amount, from, "ZAR");
+  if (viaZar === null) return null;
+  return applyLeg(viaZar, "ZAR", to);
+}
+
+/** Margin to book profit at when Ahmed records a sale in `currency` without
+ *  naming the other side: the average margin across every pair that
+ *  involves that currency. */
+export function averageMarginFor(currency: CurrencyCode, rates: RateRow[]): number | null {
+  const rows = PAIRS.filter((p) => p.a === currency || p.b === currency)
+    .map((p) => rates.find((r) => r.from === p.a && r.to === p.b))
+    .filter((r): r is RateRow => !!r);
+  if (rows.length === 0) return null;
+  return rows.reduce((s, r) => s + r.marginPercent, 0) / rows.length;
 }

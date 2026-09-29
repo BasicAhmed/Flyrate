@@ -6,10 +6,10 @@ import { Menu, X } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 
 const LINKS = [
-  { href: "#rates", label: "الأسعار" },
   { href: "#calculator", label: "الحاسبة" },
-  { href: "#why", label: "لماذا FlyRate" },
   { href: "#how", label: "كيف تعمل" },
+  { href: "#rates", label: "الأسعار" },
+  { href: "#why", label: "لماذا FlyRate" },
   { href: "#faq", label: "الأسئلة الشائعة" },
   { href: "#contact", label: "تواصل معنا" },
 ];

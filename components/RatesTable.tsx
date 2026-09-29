@@ -5,6 +5,8 @@ import { Search } from "lucide-react";
 import { CURRENCIES, type CurrencyCode } from "@/lib/corridors";
 import { formatRate } from "@/lib/format";
 import type { RateRow } from "@/lib/rates";
+import { flowKey } from "@/lib/flows";
+import { selectCorridor } from "./Calculator";
 
 function formatUpdated(iso: string | null) {
   if (!iso) return "—";
@@ -17,7 +19,7 @@ function formatUpdated(iso: string | null) {
   });
 }
 
-export default function RatesTable({ rates }: { rates: RateRow[] }) {
+export default function RatesTable({ rates, disabledFlows = [] }: { rates: RateRow[]; disabledFlows?: string[] }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CurrencyCode | "ALL">("ALL");
 
@@ -48,8 +50,7 @@ export default function RatesTable({ rates }: { rates: RateRow[] }) {
         <p className="eyebrow">الأسعار المباشرة</p>
         <h2 className="section-heading mt-3">كل دول التحويل في جدول واحد واضح.</h2>
         <p className="mt-3 max-w-lg text-muted">
-          الأسعار تتحدث خلال اليوم. ابحث عن دولة أو صفّي حسب العملة عشان تلقى
-          الممر اللي يهمك.
+          الأسعار تتحدث خلال اليوم. اضغط على أي سطر عشان تحسبه في الحاسبة مباشرة.
         </p>
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -91,24 +92,29 @@ export default function RatesTable({ rates }: { rates: RateRow[] }) {
           </div>
         </div>
 
-        <div className="mt-6 overflow-x-auto rounded-2xl border border-border">
+        <div className="card mt-6 overflow-x-auto">
           <table className="w-full min-w-[520px] border-collapse text-right font-mono text-sm">
             <thead>
-              <tr className="border-b border-border bg-surface text-xs text-subtle">
+              <tr className="border-b border-border bg-surface2 text-xs text-subtle">
                 <th className="px-5 py-3.5 font-medium">من</th>
                 <th className="px-5 py-3.5 font-medium">إلى</th>
                 <th className="px-5 py-3.5 font-medium">السعر</th>
                 <th className="px-5 py-3.5 font-medium">آخر تحديث</th>
+                <th className="px-5 py-3.5 font-medium" />
               </tr>
             </thead>
             <tbody>
               {filtered.map((r, i) => {
                 const from = CURRENCIES[r.from];
                 const to = CURRENCIES[r.to];
+                const paused = disabledFlows.includes(flowKey(r.from, r.to));
                 return (
                   <tr
                     key={`${r.from}-${r.to}`}
-                    className={i % 2 === 0 ? "bg-bg" : "bg-surface/40"}
+                    onClick={() => selectCorridor(r.from, r.to)}
+                    className={`group cursor-pointer border-b border-border/40 transition-colors last:border-0 hover:bg-primary/5 ${
+                      paused ? "opacity-60" : ""
+                    }`}
                   >
                     <td className="px-5 py-3.5 text-ink" dir="ltr">
                       {from.flag} {r.from}
@@ -118,12 +124,19 @@ export default function RatesTable({ rates }: { rates: RateRow[] }) {
                     </td>
                     <td className="px-5 py-3.5 font-semibold text-primary" dir="ltr">{formatRate(r.rate)}</td>
                     <td className="px-5 py-3.5 text-subtle" dir="ltr">{formatUpdated(r.updatedAt)}</td>
+                    <td className="px-5 py-3.5 text-left font-body text-xs">
+                      {paused ? (
+                        <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-500">متوقف مؤقتاً</span>
+                      ) : (
+                        <span className="text-subtle transition-colors group-hover:text-primary">احسب ←</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-8 text-center text-muted">
+                  <td colSpan={5} className="px-5 py-8 text-center text-muted">
                     لا توجد نتائج مطابقة لـ «{query}».
                   </td>
                 </tr>

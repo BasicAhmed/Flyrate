@@ -12,9 +12,15 @@
   --color-ink: 245 244 241;
   --color-muted: 154 154 158;
   --color-subtle: 110 110 115;
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 12px 32px -16px rgba(0, 0, 0, 0.7);
+  --shadow-raised: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 2px 4px rgba(0, 0, 0, 0.45),
+    0 24px 48px -20px rgba(0, 0, 0, 0.8);
 }
 
 .light {
+  --shadow-card: 0 1px 2px rgba(20, 20, 25, 0.06), 0 8px 24px -12px rgba(20, 20, 25, 0.12);
+  --shadow-raised: 0 2px 4px rgba(20, 20, 25, 0.06), 0 20px 40px -18px rgba(20, 20, 25, 0.18);
   color-scheme: light;
   --color-bg: 250 250 249;
   --color-surface: 255 255 255;
@@ -61,4 +67,37 @@
 
 .section-heading {
   @apply font-display text-3xl font-semibold tracking-tight text-ink sm:text-4xl;
+}
+
+/* Shared surfaces — one elevation language across the site and /admin */
+.card {
+  @apply rounded-2xl border border-border bg-surface;
+  box-shadow: var(--shadow-card);
+}
+.card-raised {
+  @apply rounded-3xl border border-border bg-surface;
+  box-shadow: var(--shadow-raised);
+}
+.field {
+  @apply w-full rounded-xl border border-border bg-surface2 px-3 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-subtle focus:border-primary;
+}
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-bg transition hover:bg-primary-hot disabled:cursor-not-allowed disabled:opacity-50;
+}
+.btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface2 px-4 py-2.5 text-sm font-semibold text-ink transition hover:border-primary/60 disabled:opacity-50;
+}
+.btn-whatsapp {
+  @apply inline-flex items-center justify-center gap-2 rounded-full bg-[#25D366] font-semibold text-white transition hover:bg-[#1EBE5A] disabled:cursor-not-allowed disabled:opacity-40;
+  box-shadow: 0 10px 24px -10px rgba(37, 211, 102, 0.6);
+}
+
+/* Hide number-input spinners — amounts are typed, not stepped */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
 }

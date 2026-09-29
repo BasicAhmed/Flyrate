@@ -1,4 +1,5 @@
 import { getRates } from "@/lib/rates";
+import { getDisabledFlows } from "@/lib/flows";
 import Nav from "@/components/Nav";
 import Hero from "@/components/Hero";
 import RateTicker from "@/components/RateTicker";
@@ -10,25 +11,27 @@ import Reviews from "@/components/Reviews";
 import FAQ from "@/components/FAQ";
 import Contact from "@/components/Contact";
 import Footer from "@/components/Footer";
+import FloatingWhatsApp from "@/components/FloatingWhatsApp";
 
 export const revalidate = 60; // re-fetch rates at most once a minute
 
 export default async function Home() {
-  const rates = await getRates();
+  const [rates, disabledFlows] = await Promise.all([getRates(), getDisabledFlows()]);
 
   return (
     <>
       <Nav />
-      <Hero />
-      <Calculator rates={rates} />
+      <Hero rates={rates} disabledFlows={disabledFlows} />
+      <Calculator rates={rates} disabledFlows={disabledFlows} />
       <RateTicker rates={rates} />
-      <RatesTable rates={rates} />
-      <WhyChoose />
       <HowItWorks />
+      <RatesTable rates={rates} disabledFlows={disabledFlows} />
+      <WhyChoose />
       <Reviews />
       <FAQ />
       <Contact />
       <Footer />
+      <FloatingWhatsApp />
     </>
   );
 }

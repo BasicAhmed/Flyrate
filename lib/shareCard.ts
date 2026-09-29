@@ -233,7 +233,7 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
   // Layout is computed top-down so every section's position depends on the
   // one before it — no fixed "HEIGHT minus a guess" offsets that can leave
   // dead space or clip content.
-  const panelY = 330;
+  const panelY = 420;
   const panelX = 90;
   const panelW = WIDTH - 180;
   const sparklineTop = panelY + 300;
@@ -281,38 +281,47 @@ export async function createShareCardBlob(params: ShareCardParams): Promise<Blob
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
 
-  // Logo + wordmark lockup
-  const logoH = 46;
-  const logoW = logo ? (logo.width / logo.height) * logoH : 0;
+  // Centered logo: the mark sits alone in the middle on a soft badge,
+  // wordmark stacked underneath — both on the card's vertical axis.
+  const markCenterY = 132;
+  const badgeR = 72;
+  const badgeGlow = ctx.createRadialGradient(WIDTH / 2, markCenterY, 10, WIDTH / 2, markCenterY, badgeR + 40);
+  badgeGlow.addColorStop(0, "rgba(254,82,0,0.22)");
+  badgeGlow.addColorStop(1, "rgba(254,82,0,0)");
+  ctx.fillStyle = badgeGlow;
+  ctx.beginPath();
+  ctx.arc(WIDTH / 2, markCenterY, badgeR + 40, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.surface;
+  ctx.strokeStyle = "rgba(254,82,0,0.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(WIDTH / 2, markCenterY, badgeR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  if (logo) {
+    const logoH = 84;
+    const logoW = (logo.width / logo.height) * logoH;
+    ctx.drawImage(logo, WIDTH / 2 - logoW / 2, markCenterY - logoH / 2, logoW, logoH);
+  }
+
   ctx.direction = "ltr";
   ctx.font = "700 44px 'IBM Plex Sans Arabic', sans-serif";
   const flyWidth = ctx.measureText("Fly").width;
   const rateWidth = ctx.measureText("Rate").width;
-  const lockupWidth = logoW + (logo ? 14 : 0) + flyWidth + rateWidth;
-  let cursorX = WIDTH / 2 - lockupWidth / 2;
-  const wordmarkY = 128;
-
-  if (logo) {
-    ctx.drawImage(logo, cursorX, wordmarkY - logoH + 8, logoW, logoH);
-    cursorX += logoW + 14;
-  }
+  const wordStartX = WIDTH / 2 - (flyWidth + rateWidth) / 2;
+  const wordmarkY = markCenterY + badgeR + 58;
   ctx.textAlign = "left";
   ctx.fillStyle = COLORS.ink;
-  ctx.fillText("Fly", cursorX, wordmarkY);
+  ctx.fillText("Fly", wordStartX, wordmarkY);
   ctx.fillStyle = COLORS.primary;
-  ctx.fillText("Rate", cursorX + flyWidth, wordmarkY);
+  ctx.fillText("Rate", wordStartX + flyWidth, wordmarkY);
   ctx.textAlign = "center";
 
-  // Thin accent divider under the logo
-  ctx.strokeStyle = COLORS.primary;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(WIDTH / 2 - 44, 162);
-  ctx.lineTo(WIDTH / 2 + 44, 162);
-  ctx.stroke();
-
   // Currency chips with an arrow between them
-  const chipY = 210;
+  const chipY = wordmarkY + 44;
   const chipCenterGap = 210;
   drawCurrencyChip(ctx, WIDTH / 2 - chipCenterGap, chipY, params.fromFlag, params.fromCode);
   drawCurrencyChip(ctx, WIDTH / 2 + chipCenterGap, chipY, params.toFlag, params.toCode);

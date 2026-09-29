@@ -3,18 +3,30 @@ export const WHATSAPP_NUMBER = "97451131080"; // international format, no +, no 
 export interface OrderDetails {
   amountReceived: string;
   toCurrency: string;
+  toFlag?: string;
   amountSent: string;
   fromCurrency: string;
+  fromFlag?: string;
+  rateLine?: string; // e.g. "1 MYR = 4.10 ZAR"
   discountNote?: string;
 }
 
+/** The message that lands in Ahmed's WhatsApp when a customer taps "order".
+ *  Laid out so he can read the whole order at a glance and reply with
+ *  account details straight away — no back-and-forth to confirm amounts. */
 export function buildOrderMessage(o: OrderDetails): string {
+  const from = `${o.fromFlag ? o.fromFlag + " " : ""}${o.amountSent} ${o.fromCurrency}`;
+  const to = `${o.toFlag ? o.toFlag + " " : ""}${o.amountReceived} ${o.toCurrency}`;
   return [
-    "سلام عليكم كيف الحال",
-    `انا عاوز ${o.amountReceived} ${o.toCurrency}`,
-    `و حاحول كده ${o.amountSent} ${o.fromCurrency}`,
-    ...(o.discountNote ? [o.discountNote] : []),
-    "رسل لي رقم الحساب",
+    "السلام عليكم 👋",
+    "عاوز أعمل تحويل:",
+    "",
+    `📤 حأرسل: ${from}`,
+    `📥 يستلم: ${to}`,
+    ...(o.rateLine ? [`💱 السعر: ${o.rateLine}`] : []),
+    ...(o.discountNote ? [`🎁 ${o.discountNote}`] : []),
+    "",
+    "ممكن ترسل لي تفاصيل الحساب؟ 🙏",
   ].join("\n");
 }
 
