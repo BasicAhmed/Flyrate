@@ -17,37 +17,47 @@ export interface ShareCardParams {
   history?: ShareCardHistoryPoint[]; // last ~30 days, oldest first — same data as the in-app chart
 }
 
-const WIDTH = 1000;
+// 4:5 portrait — sits well in WhatsApp chats, Status and the Instagram feed.
+const W = 1080;
+const H = 1350;
+const M = 64; // outer margin
+const PAD = 52; // inner padding of the glass panels
+const SITE = "flyrate.exchange";
 
-const COLORS = {
-  bg: "#0A0A0B",
-  surface: "#141416",
-  surface2: "#1C1C1F",
-  ink: "#F5F4F1",
-  muted: "#9A9A9E",
-  subtle: "#6E6E73",
-  border: "rgba(255,255,255,0.09)",
+const C = {
+  bg: "#09090A",
+  ink: "#F7F5F2",
+  muted: "#A3A3A8",
+  subtle: "#6F6F75",
+  glass: "rgba(255,255,255,0.045)",
+  glassStrong: "rgba(255,255,255,0.065)",
+  line: "rgba(255,255,255,0.08)",
   primary: "#FE5200",
+  hot: "#FF8A3D",
+  amber: "#FFB36B",
+  deep: "#C43F00",
   emerald: "#10B981",
   red: "#EF4444",
 };
 
+const AR = "'IBM Plex Sans Arabic', 'Noto Sans Arabic', sans-serif";
+const MONO = "'IBM Plex Mono', ui-monospace, monospace";
+const EMOJI = "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+
 async function loadFonts() {
   const specs = [
-    "700 44px 'IBM Plex Sans Arabic'",
-    "600 42px 'IBM Plex Sans Arabic'",
-    "600 34px 'IBM Plex Sans Arabic'",
-    "500 30px 'IBM Plex Sans Arabic'",
-    "500 26px 'IBM Plex Sans Arabic'",
-    "700 90px 'IBM Plex Mono'",
-    "600 40px 'IBM Plex Mono'",
-    "600 34px 'IBM Plex Mono'",
+    `500 26px ${AR}`,
+    `600 30px ${AR}`,
+    `700 38px ${AR}`,
+    `500 26px ${MONO}`,
+    `600 34px ${MONO}`,
+    `700 96px ${MONO}`,
   ];
   try {
-    await Promise.all(specs.map((s) => document.fonts.load(s)));
+    await Promise.all(specs.map((s) => document.fonts.load(s, "0123456789 SDG تحويل")));
     await document.fonts.ready;
   } catch {
-    // fonts API not fully supported — canvas will fall back to system fonts
+    // fonts API not fully supported — canvas falls back to system fonts
   }
 }
 
@@ -60,7 +70,9 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
   });
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+/* ---------------- primitives ---------------- */
+
+function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -70,96 +82,286 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-/** Shrinks the font size (keeping weight/family) until `text` fits within
- *  maxWidth — protects large SDG amounts (hundreds of thousands) from
- *  overflowing the card. */
-function fitFontSize(
+function hexA(hex: string, a: number) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+function trendHex(t: ShareCardParams["trendColor"]) {
+  return t === "good" ? C.emerald : t === "bad" ? C.red : C.primary;
+}
+
+function brandGradient(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number) {
+  const g = ctx.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(0, C.amber);
+  g.addColorStop(0.45, C.hot);
+  g.addColorStop(1, C.primary);
+  return g;
+}
+
+function setFont(ctx: CanvasRenderingContext2D, font: string, dir: CanvasDirection = "rtl") {
+  ctx.font = font;
+  ctx.direction = dir;
+}
+
+function textWidth(ctx: CanvasRenderingContext2D, s: string, font: string) {
+  ctx.font = font;
+  return ctx.measureText(s).width;
+}
+
+/** Largest size (step 2px) at which `s` fits in maxWidth. */
+function fitSize(
   ctx: CanvasRenderingContext2D,
-  text: string,
-  family: string,
-  weight: number,
-  startSize: number,
-  minSize: number,
+  s: string,
+  fontFor: (size: number) => string,
+  start: number,
+  min: number,
   maxWidth: number
-): number {
-  let size = startSize;
-  while (size > minSize) {
-    ctx.font = `${weight} ${size}px '${family}', monospace`;
-    if (ctx.measureText(text).width <= maxWidth) break;
-    size -= 4;
-  }
+) {
+  let size = start;
+  while (size > min && textWidth(ctx, s, fontFor(size)) > maxWidth) size -= 2;
   return size;
 }
 
-function trendColorHex(trend: ShareCardParams["trendColor"]) {
-  if (trend === "good") return COLORS.emerald;
-  if (trend === "bad") return COLORS.red;
-  return COLORS.primary;
+/** Frosted panel: translucent fill, soft drop shadow, hairline border with a
+ *  warm highlight along the top edge. */
+function glassPanel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, strong = false) {
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.55)";
+  ctx.shadowBlur = 60;
+  ctx.shadowOffsetY = 24;
+  rr(ctx, x, y, w, h, r);
+  ctx.fillStyle = "rgba(18,18,20,0.92)";
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  rr(ctx, x, y, w, h, r);
+  ctx.fillStyle = strong ? C.glassStrong : C.glass;
+  ctx.fill();
+  const border = ctx.createLinearGradient(x, y, x + w * 0.4, y + h);
+  border.addColorStop(0, hexA(C.primary, strong ? 0.55 : 0.28));
+  border.addColorStop(0.35, "rgba(255,255,255,0.08)");
+  border.addColorStop(1, "rgba(255,255,255,0.05)");
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
 }
 
-/** Small pill: flag in a circular badge + currency code, e.g. used for both
- *  sides of the corridor header. Returns the pill's total width so callers
- *  can lay out a pair of these side by side. */
-function drawCurrencyChip(
-  ctx: CanvasRenderingContext2D,
-  centerX: number,
-  y: number,
-  flag: string,
-  code: string
-): number {
-  ctx.font = "600 34px 'IBM Plex Mono', monospace";
-  const codeWidth = ctx.measureText(code).width;
-  const chipHeight = 68;
-  const circleR = 26;
-  const gap = 14;
-  const paddingX = 24;
-  const chipWidth = circleR * 2 + gap + codeWidth + paddingX * 2;
-  const x = centerX - chipWidth / 2;
+/* ---------------- sections ---------------- */
 
-  ctx.fillStyle = COLORS.surface2;
-  ctx.strokeStyle = COLORS.border;
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, x, y, chipWidth, chipHeight, chipHeight / 2);
+function drawBackground(ctx: CanvasRenderingContext2D) {
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Warm blooms — top right strong, bottom left faint
+  const blooms: [number, number, number, number][] = [
+    [W * 0.82, 120, 620, 0.32],
+    [W * 0.12, H * 0.62, 520, 0.12],
+    [W * 0.5, H + 80, 560, 0.18],
+  ];
+  for (const [x, y, r, a] of blooms) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, hexA(C.primary, a));
+    g.addColorStop(1, hexA(C.primary, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Soft diagonal light sweep
+  ctx.save();
+  ctx.globalAlpha = 0.05;
+  const sweep = ctx.createLinearGradient(0, 0, W, H);
+  sweep.addColorStop(0.3, "rgba(255,255,255,0)");
+  sweep.addColorStop(0.5, "rgba(255,255,255,1)");
+  sweep.addColorStop(0.7, "rgba(255,255,255,0)");
+  ctx.fillStyle = sweep;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  // Fine grain (deterministic so every card looks identical)
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  ctx.fillStyle = "rgba(255,255,255,0.035)";
+  for (let i = 0; i < 2600; i++) ctx.fillRect(rnd() * W, rnd() * H, 1.4, 1.4);
+}
+
+function drawHeader(ctx: CanvasRenderingContext2D, logo: HTMLImageElement | null) {
+  const cx = W / 2;
+  const cy = 106;
+  const r = 46;
+
+  // Halo
+  const halo = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 2.4);
+  halo.addColorStop(0, hexA(C.primary, 0.35));
+  halo.addColorStop(1, hexA(C.primary, 0));
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 2.4, 0, Math.PI * 2);
   ctx.fill();
+
+  // Badge
+  ctx.save();
+  ctx.shadowColor = hexA(C.primary, 0.5);
+  ctx.shadowBlur = 30;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = "#141416";
+  ctx.fill();
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.strokeStyle = brandGradient(ctx, cx - r, cy - r, cx + r, cy + r);
+  ctx.lineWidth = 2.5;
   ctx.stroke();
 
-  ctx.beginPath();
-  ctx.fillStyle = COLORS.bg;
-  ctx.arc(x + paddingX + circleR, y + chipHeight / 2, circleR, 0, Math.PI * 2);
-  ctx.fill();
+  if (logo) {
+    const lh = 54;
+    const lw = (logo.width / logo.height) * lh;
+    ctx.drawImage(logo, cx - lw / 2, cy - lh / 2, lw, lh);
+  }
 
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = "30px sans-serif";
-  ctx.fillText(flag, x + paddingX + circleR, y + chipHeight / 2 + 2);
-
-  ctx.direction = "ltr";
+  // Wordmark
+  const font = `700 38px ${AR}`;
+  setFont(ctx, font, "ltr");
+  const fly = ctx.measureText("Fly").width;
+  const rate = ctx.measureText("Rate").width;
+  const x0 = cx - (fly + rate) / 2;
+  const y = cy + r + 46;
   ctx.textAlign = "left";
-  ctx.font = "600 34px 'IBM Plex Mono', monospace";
-  ctx.fillStyle = COLORS.ink;
-  ctx.fillText(code, x + paddingX + circleR * 2 + gap, y + chipHeight / 2 + 2);
-
-  ctx.textBaseline = "alphabetic";
-  ctx.textAlign = "center";
-  return chipWidth;
+  ctx.fillStyle = C.ink;
+  ctx.fillText("Fly", x0, y);
+  ctx.fillStyle = brandGradient(ctx, x0 + fly, y - 30, x0 + fly + rate, y);
+  ctx.fillText("Rate", x0 + fly, y);
 }
 
-/** Subtle repeating dot texture so the background isn't perfectly flat. */
-function drawTexture(ctx: CanvasRenderingContext2D, width: number, height: number) {
-  ctx.fillStyle = "rgba(255,255,255,0.035)";
-  const spacing = 34;
-  for (let y = spacing; y < height; y += spacing) {
-    for (let x = spacing; x < width; x += spacing) {
-      ctx.beginPath();
-      ctx.arc(x, y, 1.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
+function drawFlagBadge(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, flag: string) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.direction = "ltr";
+  ctx.font = `${Math.round(r * 1.05)}px ${EMOJI}`;
+  ctx.fillStyle = C.ink;
+  ctx.fillText(flag, cx, cy + 2);
+  ctx.restore();
+}
+
+/** Currency chip anchored at its RIGHT edge (RTL layout). Returns its width. */
+function drawCurrencyChip(ctx: CanvasRenderingContext2D, right: number, cy: number, flag: string, code: string) {
+  const h = 76;
+  const r = 26;
+  const codeFont = `600 34px ${MONO}`;
+  const codeW = textWidth(ctx, code, codeFont);
+  const w = 14 + r * 2 + 14 + codeW + 26;
+  const x = right - w;
+  rr(ctx, x, cy - h / 2, w, h, h / 2);
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  drawFlagBadge(ctx, x + 14 + r, cy, r, flag);
+  setFont(ctx, codeFont, "ltr");
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = C.ink;
+  ctx.fillText(code, x + 14 + r * 2 + 14, cy + 2);
+  ctx.textBaseline = "alphabetic";
+  return w;
+}
+
+function drawFlowBadge(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  const r = 36;
+  ctx.save();
+  ctx.shadowColor = hexA(C.primary, 0.6);
+  ctx.shadowBlur = 28;
+  ctx.shadowOffsetY = 8;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = brandGradient(ctx, cx - r, cy - r, cx + r, cy + r);
+  ctx.fill();
+  ctx.restore();
+  // ring that "cuts" the divider line
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 7, 0, Math.PI * 2);
+  ctx.strokeStyle = "#131315";
+  ctx.lineWidth = 8;
+  ctx.stroke();
+  // down arrow
+  ctx.strokeStyle = "#1A0A00";
+  ctx.lineWidth = 5;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 14);
+  ctx.lineTo(cx, cy + 14);
+  ctx.moveTo(cx - 12, cy + 3);
+  ctx.lineTo(cx, cy + 15);
+  ctx.lineTo(cx + 12, cy + 3);
+  ctx.stroke();
+}
+
+function drawRatePill(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  rateLine: string,
+  trendLabel: string | undefined,
+  color: string,
+  maxW: number
+) {
+  const h = 70;
+  const rateFont = `600 32px ${MONO}`;
+  const trendFont = `600 26px ${AR}`;
+  const rateW = textWidth(ctx, rateLine, rateFont);
+  const trendW = trendLabel ? textWidth(ctx, trendLabel, trendFont) : 0;
+  const content = 18 + 16 + rateW + (trendLabel ? 22 + trendW : 0);
+  const w = Math.min(content + 64, maxW);
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+
+  rr(ctx, x, y, w, h, h / 2);
+  ctx.fillStyle = hexA(color, 0.12);
+  ctx.fill();
+  ctx.strokeStyle = hexA(color, 0.45);
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  let cursor = x + 32;
+  // dot with halo
+  ctx.beginPath();
+  ctx.arc(cursor + 9, cy, 14, 0, Math.PI * 2);
+  ctx.fillStyle = hexA(color, 0.22);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cursor + 9, cy, 7, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  cursor += 18 + 16;
+
+  setFont(ctx, rateFont, "ltr");
+  ctx.textAlign = "left";
+  ctx.fillStyle = color;
+  ctx.fillText(rateLine, cursor, cy + 11);
+  cursor += rateW + 22;
+
+  if (trendLabel) {
+    setFont(ctx, trendFont, "rtl");
+    ctx.textAlign = "left";
+    ctx.fillText(trendLabel, cursor, cy + 9);
   }
 }
 
-/** Compact line chart of recent market-price history, same data source as
- *  the in-app RateHistoryChart. */
-function drawSparkline(
+/** Smooth area chart (midpoint quadratic curves) with a gradient fill. */
+function drawChart(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -168,27 +370,75 @@ function drawSparkline(
   points: ShareCardHistoryPoint[],
   color: string
 ) {
-  const values = points.map((p) => p.marketPrice);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const vals = points.map((p) => p.marketPrice);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
   const range = max - min || 1;
-  const coords = points.map((p, i) => ({
+  const pts = points.map((p, i) => ({
     x: x + (i / (points.length - 1)) * w,
-    y: y + (1 - (p.marketPrice - min) / range) * h,
+    y: y + 8 + (1 - (p.marketPrice - min) / range) * (h - 16),
   }));
 
+  // faint guide lines
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 2; i++) {
+    const gy = y + (h / 2) * i;
+    ctx.beginPath();
+    ctx.moveTo(x, gy);
+    ctx.lineTo(x + w, gy);
+    ctx.stroke();
+  }
+
+  const trace = () => {
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i].x + pts[i + 1].x) / 2;
+      const my = (pts[i].y + pts[i + 1].y) / 2;
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+    }
+    const last = pts[pts.length - 1];
+    ctx.lineTo(last.x, last.y);
+  };
+
+  // area
   ctx.beginPath();
-  coords.forEach((c, i) => (i === 0 ? ctx.moveTo(c.x, c.y) : ctx.lineTo(c.x, c.y)));
+  trace();
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.closePath();
+  const fill = ctx.createLinearGradient(0, y, 0, y + h);
+  fill.addColorStop(0, hexA(color, 0.32));
+  fill.addColorStop(1, hexA(color, 0));
+  ctx.fillStyle = fill;
+  ctx.fill();
+
+  // line
+  ctx.save();
+  ctx.shadowColor = hexA(color, 0.6);
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  trace();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.stroke();
+  ctx.restore();
 
-  const last = coords[coords.length - 1];
+  // end point
+  const last = pts[pts.length - 1];
   ctx.beginPath();
-  ctx.fillStyle = color;
-  ctx.arc(last.x, last.y, 5, 0, Math.PI * 2);
+  ctx.arc(last.x, last.y, 15, 0, Math.PI * 2);
+  ctx.fillStyle = hexA(color, 0.22);
   ctx.fill();
+  ctx.beginPath();
+  ctx.arc(last.x, last.y, 7, 0, Math.PI * 2);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = color;
+  ctx.stroke();
 }
 
 async function createQrCanvas(text: string, size: number): Promise<HTMLCanvasElement | null> {
@@ -199,20 +449,18 @@ async function createQrCanvas(text: string, size: number): Promise<HTMLCanvasEle
     qr.addData(text);
     qr.make();
     const count = qr.getModuleCount();
-    const cellSize = Math.max(1, Math.floor(size / count));
+    const cell = Math.max(1, Math.floor(size / count));
     const canvas = document.createElement("canvas");
-    canvas.width = cellSize * count;
-    canvas.height = cellSize * count;
+    canvas.width = cell * count;
+    canvas.height = cell * count;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.fillStyle = "#FFFFFF";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#0A0A0B";
+    ctx.fillStyle = "#111113";
     for (let row = 0; row < count; row++) {
       for (let col = 0; col < count; col++) {
-        if (qr.isDark(row, col)) {
-          ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
-        }
+        if (qr.isDark(row, col)) ctx.fillRect(col * cell, row * cell, cell, cell);
       }
     }
     return canvas;
@@ -221,235 +469,167 @@ async function createQrCanvas(text: string, size: number): Promise<HTMLCanvasEle
   }
 }
 
+/* ---------------- main ---------------- */
+
 export async function createShareCardBlob(params: ShareCardParams): Promise<Blob | null> {
   await loadFonts();
-  const [logo, qrCanvas] = await Promise.all([
-    loadImage("/logo-icon.png"),
-    createQrCanvas("https://flyrate.exchange", 480),
-  ]);
-
-  const hasHistory = (params.history?.length ?? 0) >= 2;
-
-  // Layout is computed top-down so every section's position depends on the
-  // one before it — no fixed "HEIGHT minus a guess" offsets that can leave
-  // dead space or clip content.
-  const panelY = 420;
-  const panelX = 90;
-  const panelW = WIDTH - 180;
-  const sparklineTop = panelY + 300;
-  const sparklineH = 70;
-  const pillHeight = 62;
-  const pillY = panelY + 300 + sparklineH + 24;
-  const panelH = pillY + pillHeight + 34 - panelY;
-  const panelBottom = panelY + panelH;
-  const captionY = panelBottom + 56;
-  const qrY = captionY + 40;
-  const qrSize = 150;
-  const qrLabelY = qrY + qrSize + 34;
-  const dividerY = qrLabelY + 36;
-  const ctaTop = dividerY + 40;
-  const ctaHeight = 100;
-  const HEIGHT = ctaTop + ctaHeight + 100;
+  const [logo, qr] = await Promise.all([loadImage("/logo-icon.png"), createQrCanvas(`https://${SITE}`, 420)]);
 
   const canvas = document.createElement("canvas");
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
+  canvas.width = W;
+  canvas.height = H;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
-  const pillColor = trendColorHex(params.trendColor);
+  const accent = trendHex(params.trendColor);
+  const innerL = M + PAD;
+  const innerR = W - M - PAD;
+  const innerW = innerR - innerL;
 
-  // Background
-  ctx.fillStyle = COLORS.bg;
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  drawBackground(ctx);
+  drawHeader(ctx, logo);
 
-  // Soft orange glow, top of card
-  const glow = ctx.createRadialGradient(WIDTH / 2, 220, 40, WIDTH / 2, 220, 560);
-  glow.addColorStop(0, "rgba(254,82,0,0.24)");
-  glow.addColorStop(1, "rgba(254,82,0,0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  /* ---- Quote panel ---- */
+  const qY = 236;
+  const qH = 600;
+  glassPanel(ctx, M, qY, W - M * 2, qH, 48, true);
 
-  drawTexture(ctx, WIDTH, HEIGHT);
+  // Sent row
+  setFont(ctx, `500 26px ${AR}`);
+  ctx.textAlign = "right";
+  ctx.fillStyle = C.muted;
+  ctx.fillText("ترسل", innerR, qY + 72);
 
-  // Outer frame
-  ctx.strokeStyle = COLORS.border;
-  ctx.lineWidth = 2;
-  roundRect(ctx, 22, 22, WIDTH - 44, HEIGHT - 44, 44);
-  ctx.stroke();
-
-  ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
-
-  // Centered logo: the mark sits alone in the middle on a soft badge,
-  // wordmark stacked underneath — both on the card's vertical axis.
-  const markCenterY = 132;
-  const badgeR = 72;
-  const badgeGlow = ctx.createRadialGradient(WIDTH / 2, markCenterY, 10, WIDTH / 2, markCenterY, badgeR + 40);
-  badgeGlow.addColorStop(0, "rgba(254,82,0,0.22)");
-  badgeGlow.addColorStop(1, "rgba(254,82,0,0)");
-  ctx.fillStyle = badgeGlow;
-  ctx.beginPath();
-  ctx.arc(WIDTH / 2, markCenterY, badgeR + 40, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = COLORS.surface;
-  ctx.strokeStyle = "rgba(254,82,0,0.35)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(WIDTH / 2, markCenterY, badgeR, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  if (logo) {
-    const logoH = 84;
-    const logoW = (logo.width / logo.height) * logoH;
-    ctx.drawImage(logo, WIDTH / 2 - logoW / 2, markCenterY - logoH / 2, logoW, logoH);
-  }
-
-  ctx.direction = "ltr";
-  ctx.font = "700 44px 'IBM Plex Sans Arabic', sans-serif";
-  const flyWidth = ctx.measureText("Fly").width;
-  const rateWidth = ctx.measureText("Rate").width;
-  const wordStartX = WIDTH / 2 - (flyWidth + rateWidth) / 2;
-  const wordmarkY = markCenterY + badgeR + 58;
+  const sentCy = qY + 148;
+  const chipW1 = drawCurrencyChip(ctx, innerR, sentCy, params.fromFlag, params.fromCode);
+  const sentMax = innerW - chipW1 - 30;
+  const sentSize = fitSize(ctx, params.amountSent, (s) => `700 ${s}px ${MONO}`, 64, 34, sentMax);
+  setFont(ctx, `700 ${sentSize}px ${MONO}`, "ltr");
   ctx.textAlign = "left";
-  ctx.fillStyle = COLORS.ink;
-  ctx.fillText("Fly", wordStartX, wordmarkY);
-  ctx.fillStyle = COLORS.primary;
-  ctx.fillText("Rate", wordStartX + flyWidth, wordmarkY);
-  ctx.textAlign = "center";
+  ctx.fillStyle = C.ink;
+  ctx.fillText(params.amountSent, innerL, sentCy + sentSize * 0.36);
 
-  // Currency chips with an arrow between them
-  const chipY = wordmarkY + 44;
-  const chipCenterGap = 210;
-  drawCurrencyChip(ctx, WIDTH / 2 - chipCenterGap, chipY, params.fromFlag, params.fromCode);
-  drawCurrencyChip(ctx, WIDTH / 2 + chipCenterGap, chipY, params.toFlag, params.toCode);
-  ctx.textAlign = "center";
-
-  ctx.fillStyle = COLORS.muted;
-  ctx.font = "600 30px 'IBM Plex Sans Arabic', sans-serif";
-  ctx.fillText("⇄", WIDTH / 2, chipY + 44);
-
-  // Result panel
-  ctx.fillStyle = "rgba(254,82,0,0.06)";
-  ctx.strokeStyle = "rgba(254,82,0,0.22)";
+  // Divider + flow badge
+  const divY = qY + 250;
+  ctx.strokeStyle = C.line;
   ctx.lineWidth = 2;
-  roundRect(ctx, panelX, panelY, panelW, panelH, 32);
-  ctx.fill();
+  ctx.setLineDash([2, 10]);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(innerL, divY);
+  ctx.lineTo(innerR, divY);
   ctx.stroke();
+  ctx.setLineDash([]);
+  drawFlowBadge(ctx, W / 2, divY);
 
-  ctx.font = "500 30px 'IBM Plex Sans Arabic', sans-serif";
-  ctx.fillStyle = COLORS.subtle;
-  ctx.fillText("المستلم يستلم", WIDTH / 2, panelY + 78);
+  // Received row
+  setFont(ctx, `500 26px ${AR}`);
+  ctx.textAlign = "right";
+  ctx.fillStyle = C.muted;
+  ctx.fillText("المستلم يستلم", innerR, qY + 330);
 
-  // Big result number — dynamically sized so it never overflows the panel
-  const amountText = `${params.amountReceived} ${params.toCode}`;
-  const maxAmountWidth = panelW - 80;
-  const amountSize = fitFontSize(ctx, amountText, "IBM Plex Mono", 700, 90, 46, maxAmountWidth);
-  ctx.direction = "ltr";
-  ctx.font = `700 ${amountSize}px 'IBM Plex Mono', monospace`;
-  ctx.fillStyle = COLORS.primary;
-  ctx.fillText(amountText, WIDTH / 2, panelY + 210);
+  const recvCy = qY + 412;
+  const chipW2 = drawCurrencyChip(ctx, innerR, recvCy, params.toFlag, params.toCode);
+  const recvMax = innerW - chipW2 - 30;
+  const recvSize = fitSize(ctx, params.amountReceived, (s) => `700 ${s}px ${MONO}`, 96, 40, recvMax);
+  setFont(ctx, `700 ${recvSize}px ${MONO}`, "ltr");
+  const recvW = ctx.measureText(params.amountReceived).width;
+  ctx.textAlign = "left";
+  ctx.save();
+  ctx.shadowColor = hexA(C.primary, 0.45);
+  ctx.shadowBlur = 36;
+  ctx.fillStyle = brandGradient(ctx, innerL, recvCy - recvSize / 2, innerL + recvW, recvCy + recvSize / 2);
+  ctx.fillText(params.amountReceived, innerL, recvCy + recvSize * 0.36);
+  ctx.restore();
 
-  // "مقابل X FROM"
-  ctx.direction = "ltr";
-  ctx.font = "500 32px 'IBM Plex Sans Arabic', sans-serif";
-  ctx.fillStyle = COLORS.muted;
-  const subtitleText = `مقابل ${params.amountSent} ${params.fromCode}`;
-  const subtitleSize = fitFontSize(ctx, subtitleText, "IBM Plex Sans Arabic", 500, 32, 22, maxAmountWidth);
-  ctx.font = `500 ${subtitleSize}px 'IBM Plex Sans Arabic', sans-serif`;
-  ctx.fillText(subtitleText, WIDTH / 2, panelY + 268);
+  // Rate pill, bottom of the panel
+  drawRatePill(ctx, W / 2, qY + qH - 68, params.rateLine, params.trendLabel, accent, W - M * 2 - 80);
 
-  // Sparkline — recent price trend, same data as the in-app chart
+  /* ---- Trend panel (or highlights when there's no history) ---- */
+  const tY = qY + qH + 24;
+  const tH = 220;
+  glassPanel(ctx, M, tY, W - M * 2, tH, 40);
+  const hasHistory = (params.history?.length ?? 0) >= 2;
+
   if (hasHistory && params.history) {
-    const sparkX = panelX + 60;
-    const sparkW = panelW - 120;
-    drawSparkline(ctx, sparkX, sparklineTop, sparkW, sparklineH, params.history, pillColor);
-    ctx.font = "500 22px 'IBM Plex Sans Arabic', sans-serif";
-    ctx.fillStyle = COLORS.subtle;
-    ctx.direction = "ltr";
-    ctx.textAlign = "left";
-    ctx.fillText(params.history[0].date, sparkX, sparklineTop + sparklineH + 24);
+    setFont(ctx, `600 26px ${AR}`);
     ctx.textAlign = "right";
-    ctx.fillText(params.history[params.history.length - 1].date, sparkX + sparkW, sparklineTop + sparklineH + 24);
-    ctx.textAlign = "center";
+    ctx.fillStyle = C.ink;
+    ctx.fillText("حركة السعر · آخر 30 يوم", innerR, tY + 58);
+
+    const first = params.history[0].date;
+    const last = params.history[params.history.length - 1].date;
+    setFont(ctx, `500 22px ${MONO}`, "ltr");
+    ctx.textAlign = "left";
+    ctx.fillStyle = C.subtle;
+    ctx.fillText(`${first} → ${last}`, innerL, tY + 56);
+
+    drawChart(ctx, innerL, tY + 86, innerW, tH - 116, params.history, accent);
+  } else {
+    const items = ["بدون رسوم مخفية", "التحويل في أقل من 30 دقيقة", "دعم فوري في واتساب"];
+    const rowH = 56;
+    items.forEach((label, i) => {
+      const cy = tY + 62 + i * rowH;
+      ctx.beginPath();
+      ctx.arc(innerR - 16, cy - 8, 16, 0, Math.PI * 2);
+      ctx.fillStyle = hexA(C.emerald, 0.16);
+      ctx.fill();
+      ctx.strokeStyle = C.emerald;
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(innerR - 23, cy - 8);
+      ctx.lineTo(innerR - 18, cy - 2);
+      ctx.lineTo(innerR - 8, cy - 14);
+      ctx.stroke();
+      setFont(ctx, `500 28px ${AR}`);
+      ctx.textAlign = "right";
+      ctx.fillStyle = C.ink;
+      ctx.fillText(label, innerR - 48, cy);
+    });
   }
 
-  // Rate pill
-  ctx.font = "600 36px 'IBM Plex Mono', monospace";
-  const rateTextWidth = ctx.measureText(params.rateLine).width;
-  ctx.font = "500 26px 'IBM Plex Sans Arabic', sans-serif";
-  const trendTextWidth = params.trendLabel ? ctx.measureText(params.trendLabel).width : 0;
+  /* ---- Footer: CTA + QR ---- */
+  const fY = tY + tH + 24;
+  const fH = H - M + 20 - fY; // runs to just above the bottom margin
+  glassPanel(ctx, M, fY, W - M * 2, fH, 40);
 
-  const pillContentWidth = rateTextWidth + (trendTextWidth ? trendTextWidth + 24 : 0);
-  const pillWidth = Math.min(pillContentWidth + 84, panelW - 40);
-  const pillX = WIDTH / 2 - pillWidth / 2;
-
-  ctx.fillStyle = `${pillColor}1F`;
-  ctx.strokeStyle = `${pillColor}66`;
-  ctx.lineWidth = 2;
-  roundRect(ctx, pillX, pillY, pillWidth, pillHeight, pillHeight / 2);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.fillStyle = pillColor;
-  ctx.arc(pillX + 34, pillY + pillHeight / 2, 6, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.direction = "ltr";
-  ctx.textAlign = "left";
-  ctx.font = "600 36px 'IBM Plex Mono', monospace";
-  ctx.fillStyle = pillColor;
-  ctx.fillText(params.rateLine, pillX + 56, pillY + pillHeight / 2 + 12);
-
-  if (params.trendLabel) {
-    ctx.direction = "rtl";
-    ctx.font = "500 26px 'IBM Plex Sans Arabic', sans-serif";
-    ctx.fillText(params.trendLabel, pillX + 56 + rateTextWidth + 24, pillY + pillHeight / 2 + 9);
-  }
-  ctx.textAlign = "center";
-
-  // Updated caption, below the panel
-  if (params.updatedCaption) {
-    ctx.direction = "rtl";
-    ctx.font = "500 26px 'IBM Plex Sans Arabic', sans-serif";
-    ctx.fillStyle = COLORS.subtle;
-    ctx.fillText(params.updatedCaption, WIDTH / 2, captionY);
-  }
-
-  // QR code — links straight to the live site
-  if (qrCanvas) {
-    const qrX = WIDTH / 2 - qrSize / 2;
+  const qrSize = fH - 56;
+  const qrX = innerL - 12;
+  const qrY = fY + 28;
+  if (qr) {
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.5)";
+    ctx.shadowBlur = 20;
+    rr(ctx, qrX, qrY, qrSize, qrSize, 20);
     ctx.fillStyle = "#FFFFFF";
-    roundRect(ctx, qrX, qrY, qrSize, qrSize, 16);
     ctx.fill();
-    const pad = qrSize * 0.09;
-    ctx.drawImage(qrCanvas, qrX + pad, qrY + pad, qrSize - pad * 2, qrSize - pad * 2);
-
-    ctx.direction = "ltr";
-    ctx.font = "500 24px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = COLORS.subtle;
-    ctx.fillText("flyrate.exchange", WIDTH / 2, qrLabelY);
+    ctx.restore();
+    const pad = qrSize * 0.08;
+    ctx.drawImage(qr, qrX + pad, qrY + pad, qrSize - pad * 2, qrSize - pad * 2);
   }
 
-  // Divider
-  ctx.strokeStyle = COLORS.border;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(90, dividerY);
-  ctx.lineTo(WIDTH - 90, dividerY);
-  ctx.stroke();
+  setFont(ctx, `700 38px ${AR}`);
+  ctx.textAlign = "right";
+  ctx.fillStyle = C.ink;
+  ctx.fillText("حوّل فلوسك على FlyRate", innerR, fY + 64);
+  setFont(ctx, `500 24px ${AR}`);
+  ctx.fillStyle = C.muted;
+  ctx.fillText(params.updatedCaption ?? "امسح الكود واحسب تحويلك", innerR, fY + 104);
 
-  // Footer CTA bar
-  ctx.fillStyle = COLORS.primary;
-  roundRect(ctx, 90, ctaTop, WIDTH - 180, ctaHeight, 50);
+  // site pill
+  const siteFont = `600 26px ${MONO}`;
+  const siteW = textWidth(ctx, SITE, siteFont) + 48;
+  const pillH = 46;
+  const pillY = fY + fH - 24 - pillH;
+  rr(ctx, innerR - siteW, pillY, siteW, pillH, pillH / 2);
+  ctx.fillStyle = brandGradient(ctx, innerR - siteW, pillY, innerR, pillY + pillH);
   ctx.fill();
-  ctx.direction = "rtl";
-  ctx.font = "600 36px 'IBM Plex Sans Arabic', sans-serif";
-  ctx.fillStyle = COLORS.bg;
-  ctx.fillText("حوّل فلوسك على FlyRate", WIDTH / 2, ctaTop + ctaHeight / 2 + 13);
+  setFont(ctx, siteFont, "ltr");
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#1A0A00";
+  ctx.fillText(SITE, innerR - siteW / 2, pillY + pillH / 2 + 9);
 
   return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), "image/png", 0.95));
 }
