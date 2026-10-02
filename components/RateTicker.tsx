@@ -1,8 +1,12 @@
+"use client";
+
 import { CURRENCIES } from "@/lib/corridors";
 import { formatRate } from "@/lib/format";
 import type { RateRow } from "@/lib/rates";
+import { useLiveRates } from "./LiveRates";
 
-export default function RateTicker({ rates }: { rates: RateRow[] }) {
+export default function RateTicker(props: { rates: RateRow[] }) {
+  const { rates } = useLiveRates(props.rates);
   const loop = [...rates, ...rates]; // duplicated for seamless scroll
 
   return (

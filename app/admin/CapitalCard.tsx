@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowDownToLine, ArrowUpFromLine, Landmark, Pencil, Sparkles, Trash2, X } from "lucide-react";
 import { getCapital, saveCapital, summarizeCapital, type CapitalMove, type CapitalSettings } from "@/lib/capital";
 import type { SaleEntry } from "@/lib/sales";
+import { cacheGet, cacheSet } from "@/lib/localCache";
 
 const usd = (n: number, digits = 2) =>
   `$${n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
@@ -53,26 +54,44 @@ export default function CapitalCard({
   today: string;
   onError: (msg: string) => void;
 }) {
-  const [loaded, setLoaded] = useState(false);
-  const [cap, setCap] = useState<CapitalSettings | null>(null);
+  // `undefined` in the cache = never fetched on this device; `null` = fetched, not set up yet
+  const [cached] = useState(() => cacheGet<{ cap: CapitalSettings | null }>("capital"));
+  const [loaded, setLoaded] = useState(!!cached);
+  const [cap, setCap] = useState<CapitalSettings | null>(cached?.cap ?? null);
   const [editing, setEditing] = useState(false);
-  const [startInput, setStartInput] = useState("");
-  const [dateInput, setDateInput] = useState(today);
+  const [startInput, setStartInput] = useState(cached?.cap ? fmtInput(String(cached.cap.starting)) : "");
+  const [dateInput, setDateInput] = useState(cached?.cap?.startDate ?? today);
   const [moveType, setMoveType] = useState<CapitalMove["type"] | null>(null);
   const [moveAmount, setMoveAmount] = useState("");
   const [moveNote, setMoveNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    getCapital().then((c) => {
-      setCap(c);
-      if (c) {
-        setStartInput(fmtInput(String(c.starting)));
-        setDateInput(c.startDate);
-      }
-      setLoaded(true);
-    });
-  }, []);
+    setFailed(false);
+    getCapital()
+      .then((c) => {
+        setCap(c);
+        if (c) {
+          setStartInput(fmtInput(String(c.starting)));
+          setDateInput(c.startDate);
+        }
+        setLoaded(true);
+      })
+      .catch(() => {
+        // Offline: keep the cached copy. With nothing cached we must NOT fall
+        // through to the setup form — saving there would overwrite the real
+        // capital we just failed to read.
+        if (!cached) setFailed(true);
+        setLoaded(true);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt]);
+
+  useEffect(() => {
+    if (loaded && !failed) cacheSet("capital", { cap });
+  }, [loaded, failed, cap]);
 
   const s = useMemo(() => (cap ? summarizeCapital(cap, sales, today) : null), [cap, sales, today]);
 
@@ -119,6 +138,17 @@ export default function CapitalCard({
   }
 
   if (!loaded) return <div className="card h-40 animate-pulse" />;
+
+  if (failed) {
+    return (
+      <div className="card flex items-center justify-between gap-3 p-5">
+        <p className="text-sm text-muted">تعذر تحميل رأس المال — تأكد من الاتصال.</p>
+        <button onClick={() => setAttempt((n) => n + 1)} className="btn-ghost shrink-0 px-4 py-2 text-xs">
+          إعادة المحاولة
+        </button>
+      </div>
+    );
+  }
 
   /* ---------- setup / edit ---------- */
   if (!cap || editing) {

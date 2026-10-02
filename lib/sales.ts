@@ -44,10 +44,12 @@ export async function deleteSale(id: string): Promise<void> {
 }
 
 /** Newest first. Also reads the older one-doc-per-day format (usdSold +
- *  profit, no currency) so nothing logged before this change disappears. */
+ *  profit, no currency) so nothing logged before this change disappears.
+ *  Throws on failure (offline / not signed in) so callers can keep showing
+ *  what they already have instead of an empty list. */
 export async function getSales(max = 2000): Promise<SaleEntry[]> {
   if (!firebaseEnabled || !db) return [];
-  try {
+  {
     const q = query(collection(db, "sales"), orderBy("date", "desc"), fbLimit(max));
     const snap = await getDocs(q);
     return snap.docs.map((d): SaleEntry => {
@@ -77,7 +79,5 @@ export async function getSales(max = 2000): Promise<SaleEntry[]> {
         createdAt,
       };
     });
-  } catch {
-    return [];
   }
 }

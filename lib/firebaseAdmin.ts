@@ -1,5 +1,6 @@
 import { getApps, initializeApp, cert, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getAuth, type Auth } from "firebase-admin/auth";
 
 let adminApp: App | undefined;
 
@@ -27,4 +28,9 @@ function getAdminApp(): App {
 
 export function getAdminDb(): Firestore {
   return getFirestore(getAdminApp());
+}
+
+/** For verifying an admin's ID token in API routes. */
+export function getAdminAuth(): Auth {
+  return getAuth(getAdminApp());
 }

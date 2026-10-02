@@ -7,6 +7,7 @@ import { formatRate } from "@/lib/format";
 import type { RateRow } from "@/lib/rates";
 import { flowKey } from "@/lib/flows";
 import { selectCorridor } from "./Calculator";
+import { useLiveRates } from "./LiveRates";
 
 function formatUpdated(iso: string | null) {
   if (!iso) return "—";
@@ -19,7 +20,8 @@ function formatUpdated(iso: string | null) {
   });
 }
 
-export default function RatesTable({ rates, disabledFlows = [] }: { rates: RateRow[]; disabledFlows?: string[] }) {
+export default function RatesTable(props: { rates: RateRow[]; disabledFlows?: string[] }) {
+  const { rates, disabledFlows } = useLiveRates(props.rates, props.disabledFlows);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CurrencyCode | "ALL">("ALL");
 

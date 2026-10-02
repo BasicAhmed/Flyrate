@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import { PAIRS, type CurrencyCode } from "@/lib/corridors";
 import { fetchCombinedUsdRates } from "@/lib/fx";
@@ -79,6 +80,10 @@ export async function GET(request: Request) {
   });
 
   await Promise.all(jobs);
+
+  // Rebuild the cached homepage so the first visitor after the daily update
+  // already sees the new prices.
+  revalidatePath("/");
 
   return NextResponse.json({ ok: true, at: new Date().toISOString(), updated, skipped, sdgError, sdgDetail });
 }

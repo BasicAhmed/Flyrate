@@ -9,6 +9,7 @@ import { flowKey } from "@/lib/flows";
 import type { RateRow } from "@/lib/rates";
 import { selectCorridor } from "./Calculator";
 import WhatsAppIcon from "./WhatsAppIcon";
+import { useLiveRates } from "./LiveRates";
 
 // Busiest corridors, shown as one-tap shortcuts into the calculator
 const FEATURED: [CurrencyCode, CurrencyCode][] = [
@@ -18,7 +19,8 @@ const FEATURED: [CurrencyCode, CurrencyCode][] = [
   ["EGP", "ZAR"],
 ];
 
-export default function Hero({ rates, disabledFlows = [] }: { rates: RateRow[]; disabledFlows?: string[] }) {
+export default function Hero(props: { rates: RateRow[]; disabledFlows?: string[] }) {
+  const { rates, disabledFlows } = useLiveRates(props.rates, props.disabledFlows);
   const featured = FEATURED.map(([from, to]) => {
     const r = rates.find((x) => x.from === from && x.to === to);
     if (!r) return null;

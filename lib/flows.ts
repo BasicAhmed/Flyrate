@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { db, firebaseEnabled } from "./firebase";
 import type { CurrencyCode } from "./corridors";
 
@@ -25,4 +25,18 @@ export async function getDisabledFlows(): Promise<string[]> {
 export async function setDisabledFlows(disabled: string[]) {
   if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
   await setDoc(doc(db, "settings", "flows"), { disabled, updatedAt: serverTimestamp() });
+}
+
+/** Realtime version for open pages — a flow switched off in /admin shows
+ *  as paused on the site immediately. Returns an unsubscribe function. */
+export function subscribeDisabledFlows(onFlows: (disabled: string[]) => void): () => void {
+  if (!firebaseEnabled || !db) return () => {};
+  return onSnapshot(
+    doc(db, "settings", "flows"),
+    (snap) => {
+      const list = snap.exists() ? snap.data().disabled : [];
+      onFlows(Array.isArray(list) ? list.filter((x) => typeof x === "string") : []);
+    },
+    () => {}
+  );
 }

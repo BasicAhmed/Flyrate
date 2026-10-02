@@ -4,21 +4,28 @@ import { useEffect, useState } from "react";
 import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { RefreshCw } from "lucide-react";
 import { auth, firebaseEnabled } from "@/lib/firebase";
+import { cacheClear, cacheGet, cacheSet } from "@/lib/localCache";
 import AdminLogin from "./Login";
 import AdminDashboard from "./Dashboard";
 
 export default function AdminPage() {
   const [user, setUser] = useState<User | null>(null);
   const [checking, setChecking] = useState(true);
+  // Signed in last time on this device → open the dashboard straight away
+  // with cached data while Firebase restores the session in the background.
+  const [optimistic, setOptimistic] = useState(false);
 
   useEffect(() => {
     if (!firebaseEnabled || !auth) {
       setChecking(false);
       return;
     }
+    setOptimistic(cacheGet<boolean>("authed") === true);
     return onAuthStateChanged(auth, (u) => {
       setUser(u);
       setChecking(false);
+      if (u) cacheSet("authed", true);
+      else cacheClear(); // signed out / session expired — drop cached data
     });
   }, []);
 
@@ -36,6 +43,18 @@ export default function AdminPage() {
     );
   }
 
+  if (user || (checking && optimistic)) {
+    return (
+      <AdminDashboard
+        authReady={!!user}
+        onSignOut={() => {
+          cacheClear();
+          signOut(auth!);
+        }}
+      />
+    );
+  }
+
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -44,7 +63,5 @@ export default function AdminPage() {
     );
   }
 
-  if (!user) return <AdminLogin />;
-
-  return <AdminDashboard onSignOut={() => signOut(auth!)} />;
+  return <AdminLogin />;
 }

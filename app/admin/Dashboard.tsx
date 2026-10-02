@@ -17,6 +17,8 @@ import { formatRelativeTime } from "@/lib/relativeTime";
 import { setMarginPercent } from "@/lib/settings";
 import { flowKey, getDisabledFlows, setDisabledFlows } from "@/lib/flows";
 import { PAIRS, CURRENCIES, type CurrencyCode } from "@/lib/corridors";
+import { cacheGet, cacheSet } from "@/lib/localCache";
+import { refreshSite } from "@/lib/refreshSite";
 import ProfitTab from "./ProfitTab";
 
 type Tab = "rates" | "profit";
@@ -62,14 +64,24 @@ function Switch({ on, onChange, label }: { on: boolean; onChange: () => void; la
   );
 }
 
-export default function AdminDashboard({ onSignOut }: { onSignOut: () => void }) {
-  const [tab, setTab] = useState<Tab>("rates");
+interface RatesCache {
+  rates: RateRow[];
+  margin: number;
+  disabled: string[];
+}
 
-  const [ratesLoaded, setRatesLoaded] = useState(false);
-  const [margin, setMargin] = useState(3.5);
-  const [marginInput, setMarginInput] = useState("3.5");
+export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: () => void; authReady: boolean }) {
+  const [tab, setTab] = useState<Tab>("rates");
+  // Last-known data from this device — on screen instantly, replaced by the
+  // fresh copy a moment later.
+  const [cached] = useState(() => cacheGet<RatesCache>("rates"));
+  const [profitOpened, setProfitOpened] = useState(false);
+
+  const [ratesLoaded, setRatesLoaded] = useState(!!cached);
+  const [margin, setMargin] = useState(cached?.margin ?? 3.5);
+  const [marginInput, setMarginInput] = useState(String(cached?.margin ?? 3.5));
   const [savingMargin, setSavingMargin] = useState(false);
-  const [rates, setRates] = useState<RateRow[]>([]);
+  const [rates, setRates] = useState<RateRow[]>(cached?.rates ?? []);
   const [marginInputs, setMarginInputs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -77,18 +89,34 @@ export default function AdminDashboard({ onSignOut }: { onSignOut: () => void })
   const [fxMessage, setFxMessage] = useState<string | null>(null);
   const [sdgOverrideInput, setSdgOverrideInput] = useState("");
   const [savingSdgOverride, setSavingSdgOverride] = useState(false);
-  const [disabled, setDisabled] = useState<string[]>([]);
+  const [disabled, setDisabled] = useState<string[]>(cached?.disabled ?? []);
 
   // Rates are needed by both tabs (the profit tab converts sales to USD).
   useEffect(() => {
-    Promise.all([getRatesWithMargin(), getDisabledFlows()]).then(([{ rates, defaultMargin }, flows]) => {
-      setRates(rates);
-      setMargin(defaultMargin);
-      setMarginInput(String(defaultMargin));
-      setDisabled(flows);
-      setRatesLoaded(true);
-    });
+    // With a cached copy on screen, a failed refresh keeps the cache rather
+    // than swapping in placeholder prices.
+    Promise.all([getRatesWithMargin({ strict: !!cached }), getDisabledFlows()])
+      .then(([{ rates, defaultMargin }, flows]) => {
+        setRates(rates);
+        setMargin(defaultMargin);
+        setMarginInput(String(defaultMargin));
+        setDisabled(flows);
+        setRatesLoaded(true);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep the device cache in step with whatever is on screen.
+  useEffect(() => {
+    if (ratesLoaded) cacheSet("rates", { rates, margin, disabled } satisfies RatesCache);
+  }, [ratesLoaded, rates, margin, disabled]);
+
+  // Warm the profit tab in the background once the session is ready, so
+  // switching to it is instant; after that it stays mounted.
+  useEffect(() => {
+    if (authReady && ratesLoaded) setProfitOpened(true);
+  }, [authReady, ratesLoaded]);
 
   const currentSdgUsdt = rates.find((r) => (r.from === "SDG" || r.to === "SDG") && r.sdgSource)?.sdgSource?.usdtToSdg;
   const lastUpdated = rates
@@ -120,6 +148,7 @@ export default function AdminDashboard({ onSignOut }: { onSignOut: () => void })
     setSaveError(null);
     try {
       await setDisabledFlows(next);
+      refreshSite();
     } catch (err) {
       setDisabled(prev);
       setSaveError(err instanceof Error ? err.message : String(err));
@@ -137,6 +166,7 @@ export default function AdminDashboard({ onSignOut }: { onSignOut: () => void })
     setSaveError(null);
     try {
       await setPairMargin(a, b, newMarginOverride);
+      refreshSite();
       patchRatePair(a, b, {
         marginPercent: newMarginOverride ?? margin,
         marginOverride: newMarginOverride ?? undefined,
@@ -159,6 +189,7 @@ export default function AdminDashboard({ onSignOut }: { onSignOut: () => void })
     try {
       const val = parseFloat(marginInput);
       await setMarginPercent(val);
+      refreshSite();
       setMargin(val);
       setRates((prev) =>
         prev.map((r) =>
@@ -176,6 +207,7 @@ export default function AdminDashboard({ onSignOut }: { onSignOut: () => void })
     setFxMessage(null);
     try {
       const { updated, skipped } = await updateRatesFromLiveFx();
+      refreshSite();
       const stamp = new Date().toISOString();
       for (const u of updated) {
         patchRatePair(u.from, u.to, { marketPrice: u.marketPrice, sdgSource: u.sdgSource, updatedAt: stamp });
@@ -196,6 +228,7 @@ export default function AdminDashboard({ onSignOut }: { onSignOut: () => void })
     setSaveError(null);
     try {
       await setSdgUsdtOverride(val);
+      refreshSite();
       setRates((prev) =>
         prev.map((r) => {
           if ((r.from !== "SDG" && r.to !== "SDG") || !r.sdgSource) return r;
@@ -274,12 +307,16 @@ export default function AdminDashboard({ onSignOut }: { onSignOut: () => void })
           </p>
         )}
 
-        {!ratesLoaded ? (
-          <Spinner />
-        ) : tab === "profit" ? (
-          <ProfitTab rates={rates} defaultMargin={margin} onError={setSaveError} />
-        ) : (
-          <div className="mt-5 space-y-4">
+        {!ratesLoaded && <Spinner />}
+
+        {ratesLoaded && (profitOpened || tab === "profit") && (
+          <div className={tab === "profit" ? "" : "hidden"}>
+            <ProfitTab rates={rates} defaultMargin={margin} authReady={authReady} onError={setSaveError} />
+          </div>
+        )}
+
+        {ratesLoaded && (
+          <div className={`mt-5 space-y-4 ${tab === "rates" ? "" : "hidden"}`}>
             {/* Controls */}
             <div className="card overflow-hidden p-0">
               <div className="flex items-center justify-between gap-3 bg-gradient-to-br from-primary/15 via-transparent to-accent/10 p-5">

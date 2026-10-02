@@ -14,6 +14,7 @@ import { getRateHistory, type RateHistoryPoint } from "@/lib/rateHistory";
 import { buildOrderMessage, whatsappLink } from "@/lib/whatsapp";
 import RateHistoryChart from "./RateHistoryChart";
 import WhatsAppIcon from "./WhatsAppIcon";
+import { useLiveRates } from "./LiveRates";
 
 type Mode = "send" | "receive";
 
@@ -87,13 +88,8 @@ function CurrencySelect({
   );
 }
 
-export default function Calculator({
-  rates,
-  disabledFlows = [],
-}: {
-  rates: RateRow[];
-  disabledFlows?: string[];
-}) {
+export default function Calculator(props: { rates: RateRow[]; disabledFlows?: string[] }) {
+  const { rates, disabledFlows } = useLiveRates(props.rates, props.disabledFlows);
   const [mode, setMode] = useState<Mode>("send");
   const [fromCode, setFromCode] = useState<CurrencyCode>(FROM_CURRENCIES[0].code);
   const [toCode, setToCode] = useState<CurrencyCode>(validToCurrencies(FROM_CURRENCIES[0].code)[0]?.code);

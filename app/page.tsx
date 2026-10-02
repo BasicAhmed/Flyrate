@@ -12,6 +12,7 @@ import FAQ from "@/components/FAQ";
 import Contact from "@/components/Contact";
 import Footer from "@/components/Footer";
 import FloatingWhatsApp from "@/components/FloatingWhatsApp";
+import { LiveRatesProvider } from "@/components/LiveRates";
 
 export const revalidate = 60; // re-fetch rates at most once a minute
 
@@ -19,7 +20,7 @@ export default async function Home() {
   const [rates, disabledFlows] = await Promise.all([getRates(), getDisabledFlows()]);
 
   return (
-    <>
+    <LiveRatesProvider initialRates={rates} initialFlows={disabledFlows}>
       <Nav />
       <Hero rates={rates} disabledFlows={disabledFlows} />
       <Calculator rates={rates} disabledFlows={disabledFlows} />
@@ -32,6 +33,6 @@ export default async function Home() {
       <Contact />
       <Footer />
       <FloatingWhatsApp />
-    </>
+    </LiveRatesProvider>
   );
 }

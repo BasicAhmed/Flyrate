@@ -7,6 +7,7 @@ import { convertMid, type RateRow } from "@/lib/rates";
 import { getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, deleteSale, getSales, type SaleEntry } from "@/lib/sales";
 import { CURRENCIES, PAIRS, type CurrencyCode } from "@/lib/corridors";
+import { cacheGet, cacheSet } from "@/lib/localCache";
 import CapitalCard from "./CapitalCard";
 
 function todayStr() {
@@ -77,16 +78,19 @@ function Kpi({
 export default function ProfitTab({
   rates,
   defaultMargin,
+  authReady,
   onError,
 }: {
   rates: RateRow[];
   defaultMargin: number;
+  authReady: boolean; // sales are private — only readable once the session is restored
   onError: (msg: string) => void;
 }) {
-  const [loaded, setLoaded] = useState(false);
-  const [sales, setSales] = useState<SaleEntry[]>([]);
-  const [dailyTarget, setDailyTargetState] = useState(2000);
-  const [targetInput, setTargetInput] = useState("2000");
+  const [cached] = useState(() => cacheGet<{ sales: SaleEntry[]; target: number }>("profit"));
+  const [loaded, setLoaded] = useState(!!cached);
+  const [sales, setSales] = useState<SaleEntry[]>(cached?.sales ?? []);
+  const [dailyTarget, setDailyTargetState] = useState(cached?.target ?? 2000);
+  const [targetInput, setTargetInput] = useState(String(cached?.target ?? 2000));
   const [savingTarget, setSavingTarget] = useState(false);
 
   // Form
@@ -98,13 +102,25 @@ export default function ProfitTab({
   const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getSales(), getDailyTarget()]).then(([s, t]) => {
-      setSales(s);
-      setDailyTargetState(t);
-      setTargetInput(String(t));
-      setLoaded(true);
-    });
-  }, []);
+    if (!authReady) return;
+    Promise.all([getSales(), getDailyTarget()])
+      .then(([s, t]) => {
+        setSales(s);
+        setDailyTargetState(t);
+        setTargetInput(String(t));
+        setLoaded(true);
+      })
+      .catch((err) => {
+        // Keep whatever is cached; only complain when there's nothing to show.
+        if (!cached) onError(err instanceof Error ? err.message : String(err));
+        setLoaded(true);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady]);
+
+  useEffect(() => {
+    if (loaded) cacheSet("profit", { sales, target: dailyTarget });
+  }, [loaded, sales, dailyTarget]);
 
   const autoMargin = suggestedMargin(currency, rates, defaultMargin);
   const margin = marginInput === null || marginInput.trim() === "" ? autoMargin : parseFloat(marginInput) || 0;

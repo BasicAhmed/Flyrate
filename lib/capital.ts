@@ -21,19 +21,17 @@ export interface CapitalSettings {
  *  signed-in admin in the existing Firestore rules, so nothing to deploy. */
 export async function getCapital(): Promise<CapitalSettings | null> {
   if (!firebaseEnabled || !db) return null;
-  try {
-    const snap = await getDoc(doc(db, "settings", "capital"));
-    if (!snap.exists()) return null;
-    const d = snap.data();
-    if (typeof d.starting !== "number" || typeof d.startDate !== "string") return null;
-    return {
-      starting: d.starting,
-      startDate: d.startDate,
-      moves: Array.isArray(d.moves) ? d.moves : [],
-    };
-  } catch {
-    return null;
-  }
+  // Not caught on purpose: null means "not set yet", a throw means "couldn't
+  // read" — the caller keeps its cached copy in that case.
+  const snap = await getDoc(doc(db, "settings", "capital"));
+  if (!snap.exists()) return null;
+  const d = snap.data();
+  if (typeof d.starting !== "number" || typeof d.startDate !== "string") return null;
+  return {
+    starting: d.starting,
+    startDate: d.startDate,
+    moves: Array.isArray(d.moves) ? d.moves : [],
+  };
 }
 
 export async function saveCapital(c: CapitalSettings) {

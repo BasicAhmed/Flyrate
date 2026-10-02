@@ -1,9 +1,19 @@
-import { collection, getDocs, getDoc, doc, setDoc, deleteField, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  doc,
+  setDoc,
+  deleteField,
+  serverTimestamp,
+  onSnapshot,
+  writeBatch,
+  type DocumentData,
+} from "firebase/firestore";
 import { db, firebaseEnabled } from "./firebase";
 import { PAIRS, pairKey, isForwardDirection, isMultiplyCorridor, type CurrencyCode } from "./corridors";
 import { getMarginPercent } from "./settings";
 import { roundForDisplay } from "./format";
-import { appendRateHistory } from "./rateHistory";
+import { mergeHistoryEntry, todayDateStr, type RateHistoryPoint } from "./rateHistory";
 import seed from "@/data/rates.seed.json";
 
 /** For SDG pairs only: the raw USDT/SDG data the marketPrice was derived
@@ -84,71 +94,113 @@ function seedRows(defaultMargin: number): RateRow[] {
   });
 }
 
+interface StoredPair {
+  marketPrice: number;
+  marginOverride?: number;
+  updatedAt: string | null;
+  sdgSource?: SdgSourceDetail;
+}
+
+function parseRateDoc(data: DocumentData): StoredPair {
+  return {
+    marketPrice: data.marketPrice,
+    marginOverride: typeof data.marginPercent === "number" ? data.marginPercent : undefined,
+    updatedAt: data.updatedAt?.toDate?.().toISOString?.() ?? null,
+    sdgSource:
+      typeof data.sdgUsdtToSdg === "number" && Array.isArray(data.sdgPrices)
+        ? { usdtToSdg: data.sdgUsdtToSdg, prices: data.sdgPrices }
+        : undefined,
+  };
+}
+
+const SEED_PRICES = new Map(
+  seed.rates.map((r) => [pairKey(r.from as CurrencyCode, r.to as CurrencyCode), r.marketPrice])
+);
+
+/** Stored pairs + global margin → both directions' customer rates for every
+ *  corridor. Shared by the one-off read and the realtime subscription. */
+function buildRates(map: Map<string, StoredPair>, defaultMargin: number): RateRow[] {
+  return PAIRS.flatMap(({ a, b }) => {
+    const key = pairKey(a, b);
+    const entry = map.get(key);
+    const marketPrice = typeof entry?.marketPrice === "number" ? entry.marketPrice : SEED_PRICES.get(key)!;
+    return rowsForPair(
+      a,
+      b,
+      marketPrice,
+      entry?.marginOverride ?? defaultMargin,
+      entry?.marginOverride,
+      entry?.updatedAt ?? null,
+      entry?.sdgSource
+    );
+  });
+}
+
 /** Reads all rates (one stored market price + optional margin override per
  *  pair → both directions' margin-adjusted rates). Pairs without their own
  *  override use the global default margin. Tries Firestore first; falls
  *  back to the bundled seed file so the site works before Firebase is
- *  wired up. Fetches the margin and the rates collection in parallel
- *  (they're independent reads) rather than one after another. */
-export async function getRatesWithMargin(): Promise<{ rates: RateRow[]; defaultMargin: number }> {
+ *  wired up. Margin and rates are fetched in parallel. */
+export async function getRatesWithMargin(
+  opts: { strict?: boolean } = {}
+): Promise<{ rates: RateRow[]; defaultMargin: number }> {
   if (!firebaseEnabled || !db) {
     const defaultMargin = await getMarginPercent();
     return { rates: seedRows(defaultMargin), defaultMargin };
   }
 
   try {
-    const [defaultMargin, snap] = await Promise.all([
-      getMarginPercent(),
-      getDocs(collection(db, "rates")),
-    ]);
+    const [defaultMargin, snap] = await Promise.all([getMarginPercent(), getDocs(collection(db, "rates"))]);
     if (snap.empty) return { rates: seedRows(defaultMargin), defaultMargin };
-
-    const map = new Map<
-      string,
-      {
-        marketPrice: number;
-        marginOverride?: number;
-        updatedAt: string | null;
-        sdgSource?: SdgSourceDetail;
-      }
-    >();
-    snap.forEach((d) => {
-      const data = d.data();
-      map.set(d.id, {
-        marketPrice: data.marketPrice,
-        marginOverride: typeof data.marginPercent === "number" ? data.marginPercent : undefined,
-        updatedAt: data.updatedAt?.toDate?.().toISOString?.() ?? null,
-        sdgSource:
-          typeof data.sdgUsdtToSdg === "number" && Array.isArray(data.sdgPrices)
-            ? { usdtToSdg: data.sdgUsdtToSdg, prices: data.sdgPrices }
-            : undefined,
-      });
-    });
-
-    const fallback = new Map(
-      seed.rates.map((r) => [pairKey(r.from as CurrencyCode, r.to as CurrencyCode), r.marketPrice])
-    );
-
-    const rates = PAIRS.flatMap(({ a, b }) => {
-      const key = pairKey(a, b);
-      const entry = map.get(key);
-      const marketPrice = entry?.marketPrice ?? fallback.get(key)!;
-      const effectiveMargin = entry?.marginOverride ?? defaultMargin;
-      return rowsForPair(
-        a,
-        b,
-        marketPrice,
-        effectiveMargin,
-        entry?.marginOverride,
-        entry?.updatedAt ?? null,
-        entry?.sdgSource
-      );
-    });
-    return { rates, defaultMargin };
-  } catch {
+    const map = new Map<string, StoredPair>();
+    snap.forEach((d) => map.set(d.id, parseRateDoc(d.data())));
+    return { rates: buildRates(map, defaultMargin), defaultMargin };
+  } catch (err) {
+    // strict: the caller has something better to show than placeholder
+    // seed prices (e.g. /admin's cached copy) — let it know the read failed.
+    if (opts.strict) throw err;
     const defaultMargin = await getMarginPercent().catch(() => 3.5);
     return { rates: seedRows(defaultMargin), defaultMargin };
   }
+}
+
+/** Realtime prices for pages that are already open: fires with fresh rows
+ *  the moment a market price or margin changes (admin save, "update now",
+ *  or the daily cron) — no reload needed. Returns an unsubscribe function.
+ *  Silent no-op when Firebase isn't configured. */
+export function subscribeLiveRates(onRates: (rates: RateRow[]) => void): () => void {
+  if (!firebaseEnabled || !db) return () => {};
+
+  let map: Map<string, StoredPair> | null = null;
+  let margin: number | null = null;
+  const emit = () => {
+    if (map && map.size > 0 && margin !== null) onRates(buildRates(map, margin));
+  };
+
+  const offRates = onSnapshot(
+    collection(db, "rates"),
+    (snap) => {
+      const next = new Map<string, StoredPair>();
+      snap.forEach((d) => next.set(d.id, parseRateDoc(d.data({ serverTimestamps: "estimate" }))));
+      map = next;
+      emit();
+    },
+    () => {} // offline / blocked — the server-rendered prices stay on screen
+  );
+  const offMargin = onSnapshot(
+    doc(db, "settings", "margin"),
+    (snap) => {
+      const v = snap.exists() ? snap.data().percent : undefined;
+      margin = typeof v === "number" ? v : 3.5;
+      emit();
+    },
+    () => {}
+  );
+
+  return () => {
+    offRates();
+    offMargin();
+  };
 }
 
 /** Convenience wrapper for callers that only need the rate rows (the public
@@ -199,21 +251,25 @@ export async function setSdgUsdtOverride(newUsdtToSdg: number): Promise<void> {
   if (!firebaseEnabled || !db) {
     throw new Error("Firebase is not configured — see .env.example.");
   }
-  const sdgPairs = PAIRS.filter((p) => p.a === "SDG" || p.b === "SDG");
+  // Two reads, one atomic write — instead of 4 round trips per SDG pair.
+  const [ratesSnap, history] = await Promise.all([getDocs(collection(db, "rates")), readAllHistory()]);
+  const stored = new Map<string, DocumentData>();
+  ratesSnap.forEach((d) => stored.set(d.id, d.data()));
 
-  const jobs = sdgPairs.map(async ({ a, b }) => {
+  const batch = writeBatch(db);
+  const today = todayDateStr();
+  for (const { a, b } of PAIRS) {
+    if (a !== "SDG" && b !== "SDG") continue;
     const key = pairKey(a, b);
-    const snap = await getDoc(doc(db!, "rates", key));
-    if (!snap.exists()) return;
-    const data = snap.data();
-    const oldMarketPrice = data.marketPrice;
-    const oldUsdtToSdg = data.sdgUsdtToSdg;
+    const data = stored.get(key);
+    const oldMarketPrice = data?.marketPrice;
+    const oldUsdtToSdg = data?.sdgUsdtToSdg;
     if (typeof oldMarketPrice !== "number" || typeof oldUsdtToSdg !== "number" || oldUsdtToSdg === 0) {
-      return; // no baseline yet — leave this pair untouched
+      continue; // no baseline yet — leave this pair untouched
     }
     const newMarketPrice = oldMarketPrice * (newUsdtToSdg / oldUsdtToSdg);
-    await setDoc(
-      doc(db!, "rates", key),
+    batch.set(
+      doc(db, "rates", key),
       {
         from: a,
         to: b,
@@ -225,10 +281,25 @@ export async function setSdgUsdtOverride(newUsdtToSdg: number): Promise<void> {
       },
       { merge: true }
     );
-    await appendRateHistory(a, b, newMarketPrice);
-  });
+    batch.set(doc(db, "rateHistory", key), {
+      entries: mergeHistoryEntry(history.get(key) ?? [], today, newMarketPrice),
+    });
+  }
+  await batch.commit();
+}
 
-  await Promise.all(jobs);
+/** Every pair's stored history in ONE query (vs one read per pair). Best
+ *  effort: if it fails we still update prices, just from empty history. */
+async function readAllHistory(): Promise<Map<string, RateHistoryPoint[]>> {
+  const out = new Map<string, RateHistoryPoint[]>();
+  if (!db) return out;
+  try {
+    const snap = await getDocs(collection(db, "rateHistory"));
+    snap.forEach((d) => out.set(d.id, d.data().entries ?? []));
+  } catch {
+    // history is a nice-to-have
+  }
+  return out;
 }
 
 /** Sets (or clears) a pair-specific margin override, independent of market
@@ -263,7 +334,11 @@ export interface FxUpdateResult {
  *  pair's new marketPrice/sdgSource so the caller can patch its own state
  *  directly instead of re-fetching the whole collection afterward. */
 export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
-  const res = await fetch("/api/fx", { cache: "no-store" });
+  if (!firebaseEnabled || !db) {
+    throw new Error("Firebase is not configured — see .env.example.");
+  }
+  // Live FX and stored history are independent — fetch both at once.
+  const [res, history] = await Promise.all([fetch("/api/fx", { cache: "no-store" }), readAllHistory()]);
   const data = await res.json();
   if (!res.ok || !data.rates) {
     throw new Error(data?.error ?? "تعذر جلب أسعار الصرف الحالية");
@@ -277,25 +352,38 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   const updated: FxUpdateResult["updated"] = [];
   const skipped: string[] = [];
 
-  const jobs = PAIRS.map(async ({ a, b }) => {
+  // Every pair's price + history goes out in a single atomic batch (one
+  // round trip) instead of ~3 separate calls per pair.
+  const batch = writeBatch(db);
+  const today = todayDateStr();
+  for (const { a, b } of PAIRS) {
     const key = pairKey(a, b);
     const rateA = rateFor(a);
     const rateB = rateFor(b);
     if (!rateA || !rateB) {
       skipped.push(key);
-      return;
+      continue;
     }
     const marketPrice = rateA / rateB;
     const involvesSdg = a === "SDG" || b === "SDG";
     const pairSdgSource = involvesSdg ? sdgSource : undefined;
-    await Promise.all([
-      setMarketPrice(a, b, marketPrice, pairSdgSource),
-      appendRateHistory(a, b, marketPrice),
-    ]);
+    batch.set(
+      doc(db, "rates", key),
+      {
+        from: a,
+        to: b,
+        marketPrice,
+        updatedAt: serverTimestamp(),
+        ...(pairSdgSource ? { sdgUsdtToSdg: pairSdgSource.usdtToSdg, sdgPrices: pairSdgSource.prices } : {}),
+      },
+      { merge: true }
+    );
+    batch.set(doc(db, "rateHistory", key), {
+      entries: mergeHistoryEntry(history.get(key) ?? [], today, marketPrice),
+    });
     updated.push({ from: a, to: b, marketPrice, sdgSource: pairSdgSource });
-  });
-
-  await Promise.all(jobs);
+  }
+  await batch.commit();
 
   return { updated, skipped };
 }
