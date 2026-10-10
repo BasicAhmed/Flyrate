@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { ArrowLeftRight, LogOut, Power, RefreshCw, TrendingUp, Wallet } from "lucide-react";
 import {
   getRatesWithMargin,
-  setPairMargin,
+  setFlowMargins,
   setSdgUsdtOverride,
   computeRate,
   updateRatesFromLiveFx,
@@ -155,26 +155,42 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
     }
   }
 
+  /** Saves both flows' margins for one pair. An empty box = global default. */
   async function savePair(a: CurrencyCode, b: CurrencyCode) {
     const key = `${a}_${b}`;
-    const row = rates.find((r) => r.from === a && r.to === b);
-    if (!row) return;
-    const marginRaw = marginInputs[key];
-    const newMarginOverride = marginRaw === undefined || marginRaw.trim() === "" ? null : parseFloat(marginRaw);
+    const current = (x: CurrencyCode, y: CurrencyCode) => rates.find((r) => r.from === x && r.to === y)?.marginOverride;
+    const parse = (x: CurrencyCode, y: CurrencyCode): number | null => {
+      const raw = marginInputs[flowKey(x, y)];
+      if (raw === undefined) return current(x, y) ?? null; // untouched → keep as is
+      return raw.trim() === "" ? null : parseFloat(raw);
+    };
+    const forward = parse(a, b);
+    const reverse = parse(b, a);
 
     setSaving(key);
     setSaveError(null);
     try {
-      await setPairMargin(a, b, newMarginOverride);
+      await setFlowMargins(a, b, { forward, reverse });
       refreshSite();
-      patchRatePair(a, b, {
-        marginPercent: newMarginOverride ?? margin,
-        marginOverride: newMarginOverride ?? undefined,
-        updatedAt: new Date().toISOString(),
-      });
+      const stamp = new Date().toISOString();
+      setRates((prev) =>
+        prev.map((r) => {
+          const o = r.from === a && r.to === b ? forward : r.from === b && r.to === a ? reverse : undefined;
+          if (o === undefined) return r;
+          const pct = o ?? margin;
+          return {
+            ...r,
+            marginPercent: pct,
+            marginOverride: o ?? undefined,
+            rate: computeRate(r.from, r.to, r.marketPrice, pct, r),
+            updatedAt: stamp,
+          };
+        })
+      );
       setMarginInputs((prev) => {
         const next = { ...prev };
-        delete next[key];
+        delete next[flowKey(a, b)];
+        delete next[flowKey(b, a)];
         return next;
       });
     } catch (err) {
@@ -424,7 +440,13 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                 const fromC = CURRENCIES[a];
                 const toC = CURRENCIES[b];
                 const key = `${a}_${b}`;
-                const marginValue = marginInputs[key] ?? (row.marginOverride != null ? String(row.marginOverride) : "");
+                const rowFor = (x: CurrencyCode, y: CurrencyCode) =>
+                  rates.find((r) => r.from === x && r.to === y) ?? row;
+                const marginValueFor = (x: CurrencyCode, y: CurrencyCode) => {
+                  const o = rowFor(x, y).marginOverride;
+                  return marginInputs[flowKey(x, y)] ?? (o != null ? String(o) : "");
+                };
+                const hasCustomMargin = rowFor(a, b).marginOverride != null || rowFor(b, a).marginOverride != null;
                 const isSdg = a === "SDG" || b === "SDG";
                 const bothOff = disabled.includes(flowKey(a, b)) && disabled.includes(flowKey(b, a));
 
@@ -445,7 +467,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        {row.marginOverride != null && (
+                        {hasCustomMargin && (
                           <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">
                             هامش خاص
                           </span>
@@ -465,6 +487,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                         ] as const
                       ).map(([x, y]) => {
                         const on = !disabled.includes(flowKey(x, y));
+                        const flowRow = rowFor(x, y);
                         return (
                           <div
                             key={`${x}${y}`}
@@ -483,7 +506,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                                 on ? "text-primary" : "text-subtle line-through decoration-red-500/60"
                               }`}
                             >
-                              {formatSmart(computeRate(x, y, row.marketPrice, row.marginPercent, row))}
+                              {formatSmart(computeRate(x, y, flowRow.marketPrice, flowRow.marginPercent, flowRow))}
                             </p>
                             <p className={`text-[10px] font-semibold ${on ? "text-emerald-500" : "text-red-500"}`} dir="rtl">
                               {on ? "متاح" : "متوقف"}
@@ -509,28 +532,40 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                     )}
 
                     <p className="mb-1.5 mt-3 text-[11px] text-subtle">
-                      هامش هذا الزوج — اتركه فاضي لاستخدام الهامش العام ({margin}%)
+                      هامش كل اتجاه — اتركه فاضي لاستخدام الهامش العام ({margin}%)
                     </p>
-                    <div className="flex gap-2" dir="ltr">
-                      <div className="relative flex-1">
-                        <input
-                          type="number"
-                          step="any"
-                          inputMode="decimal"
-                          value={marginValue}
-                          onChange={(e) => setMarginInputs((prev) => ({ ...prev, [key]: e.target.value }))}
-                          placeholder={String(margin)}
-                          aria-label="هامش هذا الزوج"
-                          className="field py-2.5 pl-3.5 pr-8 font-mono text-sm"
-                        />
-                        <span className="pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-sm text-subtle">
-                          %
-                        </span>
-                      </div>
-                      <button onClick={() => savePair(a, b)} className="btn-primary shrink-0 px-5 py-2.5 text-xs">
-                        {saving === key ? "…" : "حفظ"}
-                      </button>
+                    <div className="grid grid-cols-2 gap-2" dir="ltr">
+                      {(
+                        [
+                          [a, b],
+                          [b, a],
+                        ] as const
+                      ).map(([x, y]) => (
+                        <label key={`m${x}${y}`} className="block">
+                          <span className="mb-1 block font-mono text-[10px] font-semibold text-subtle">
+                            {x} → {y}
+                          </span>
+                          <span className="relative block">
+                            <input
+                              type="number"
+                              step="any"
+                              inputMode="decimal"
+                              value={marginValueFor(x, y)}
+                              onChange={(e) => setMarginInputs((prev) => ({ ...prev, [flowKey(x, y)]: e.target.value }))}
+                              placeholder={String(margin)}
+                              aria-label={`هامش ${x} إلى ${y}`}
+                              className="field py-2.5 pl-3.5 pr-8 font-mono text-sm"
+                            />
+                            <span className="pointer-events-none absolute inset-y-0 right-3.5 flex items-center text-sm text-subtle">
+                              %
+                            </span>
+                          </span>
+                        </label>
+                      ))}
                     </div>
+                    <button onClick={() => savePair(a, b)} className="btn-primary mt-2 w-full py-2.5 text-xs">
+                      {saving === key ? "…" : "حفظ"}
+                    </button>
                   </div>
                 );
               })}

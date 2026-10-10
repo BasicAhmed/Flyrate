@@ -6,7 +6,7 @@ import { BarChart3, CalendarDays, Plus, RefreshCw, Target, Trash2, TrendingUp } 
 import { convertMid, type RateRow } from "@/lib/rates";
 import { getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, deleteSale, getSales, type SaleEntry } from "@/lib/sales";
-import { CURRENCIES, PAIRS, type CurrencyCode } from "@/lib/corridors";
+import { CURRENCIES, type CurrencyCode } from "@/lib/corridors";
 import { cacheGet, cacheSet } from "@/lib/localCache";
 import CapitalCard from "./CapitalCard";
 
@@ -33,13 +33,12 @@ function toUsd(amount: number, currency: SaleEntry["currency"], rates: RateRow[]
   return convertMid(amount, currency, "USDT", rates);
 }
 
-/** Margin to prefill for a currency: the margin of its pair(s) if they all
- *  agree, otherwise the global default. */
+/** Margin to prefill for a currency: the margin of its flows (both
+ *  directions of every pair touching it) if they all agree, otherwise the
+ *  global default. */
 function suggestedMargin(currency: CurrencyCode, rates: RateRow[], defaultMargin: number) {
   const margins = new Set(
-    PAIRS.filter((p) => p.a === currency || p.b === currency)
-      .map((p) => rates.find((r) => r.from === p.a && r.to === p.b)?.marginPercent)
-      .filter((m): m is number => typeof m === "number")
+    rates.filter((r) => r.from === currency || r.to === currency).map((r) => r.marginPercent)
   );
   return margins.size === 1 ? [...margins][0] : defaultMargin;
 }

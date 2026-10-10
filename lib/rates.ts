@@ -31,8 +31,8 @@ export interface RateRow {
   buyPrice?: number; // Binance cost for a → b, quoted a-per-b (higher)
   sellPrice?: number; // Binance cost for b → a, quoted a-per-b (lower)
   rate: number; // marketPrice adjusted by the profit margin — what customers see/get
-  marginPercent: number; // the margin actually applied to this pair (override or global default)
-  marginOverride?: number; // set only if this pair has a custom margin; absent = using the global default
+  marginPercent: number; // the margin actually applied to this flow (override or global default)
+  marginOverride?: number; // set only if this flow (direction) has its own margin; absent = global default
   updatedAt: string | null;
   sdgSource?: SdgSourceDetail;
 }
@@ -63,20 +63,42 @@ export function computeRate(
   return roundForDisplay(raw);
 }
 
+/** Each flow (direction) of a pair has its own optional margin override. */
+export interface FlowMargins {
+  forward?: number; // a → b
+  reverse?: number; // b → a
+}
+
 function rowsForPair(
   from: CurrencyCode,
   to: CurrencyCode,
   marketPrice: number,
-  marginPercent: number,
-  marginOverride: number | undefined,
+  defaultMargin: number,
+  overrides: FlowMargins,
   updatedAt: string | null,
   sdgSource?: SdgSourceDetail,
   sides: PairSides = {}
 ): RateRow[] {
-  const shared = { marketPrice, ...sides, marginPercent, marginOverride, updatedAt, sdgSource };
+  const shared = { marketPrice, ...sides, updatedAt, sdgSource };
+  const fwd = overrides.forward ?? defaultMargin;
+  const rev = overrides.reverse ?? defaultMargin;
   return [
-    { from, to, ...shared, rate: computeRate(from, to, marketPrice, marginPercent, sides) },
-    { from: to, to: from, ...shared, rate: computeRate(to, from, marketPrice, marginPercent, sides) },
+    {
+      from,
+      to,
+      ...shared,
+      marginPercent: fwd,
+      marginOverride: overrides.forward,
+      rate: computeRate(from, to, marketPrice, fwd, sides),
+    },
+    {
+      from: to,
+      to: from,
+      ...shared,
+      marginPercent: rev,
+      marginOverride: overrides.reverse,
+      rate: computeRate(to, from, marketPrice, rev, sides),
+    },
   ];
 }
 
@@ -84,23 +106,34 @@ function seedRows(defaultMargin: number): RateRow[] {
   return seed.rates.flatMap((r) => {
     const a = r.from as CurrencyCode;
     const b = r.to as CurrencyCode;
-    return rowsForPair(a, b, r.marketPrice, defaultMargin, undefined, null);
+    return rowsForPair(a, b, r.marketPrice, defaultMargin, {}, null);
   });
 }
 
 interface StoredPair extends PairSides {
   marketPrice: number;
-  marginOverride?: number;
+  flowMargins: FlowMargins;
   updatedAt: string | null;
   sdgSource?: SdgSourceDetail;
 }
 
-function parseRateDoc(data: DocumentData): StoredPair {
+const num = (v: unknown) => (typeof v === "number" ? v : undefined);
+
+/** Per-flow margins live in `flowMargins: { "A>B": n, "B>A": n }`. Older docs
+ *  only have one pair-wide `marginPercent` — that still applies to any flow
+ *  that hasn't been given its own margin yet. */
+function parseRateDoc(id: string, data: DocumentData): StoredPair {
+  const [a, b] = id.split("_");
+  const legacy = num(data.marginPercent);
+  const fm = data.flowMargins ?? {};
   return {
+    flowMargins: {
+      forward: num(fm[`${a}>${b}`]) ?? legacy,
+      reverse: num(fm[`${b}>${a}`]) ?? legacy,
+    },
     marketPrice: data.marketPrice,
     buyPrice: typeof data.buyPrice === "number" ? data.buyPrice : undefined,
     sellPrice: typeof data.sellPrice === "number" ? data.sellPrice : undefined,
-    marginOverride: typeof data.marginPercent === "number" ? data.marginPercent : undefined,
     updatedAt: data.updatedAt?.toDate?.().toISOString?.() ?? null,
     sdgSource:
       typeof data.sdgUsdtToSdg === "number" && Array.isArray(data.sdgPrices)
@@ -125,8 +158,8 @@ function buildRates(map: Map<string, StoredPair>, defaultMargin: number): RateRo
       a,
       b,
       marketPrice,
-      entry?.marginOverride ?? defaultMargin,
-      entry?.marginOverride,
+      defaultMargin,
+      entry?.flowMargins ?? {},
       entry?.updatedAt ?? null,
       entry?.sdgSource,
       hasStored ? { buyPrice: entry!.buyPrice, sellPrice: entry!.sellPrice } : {}
@@ -151,7 +184,7 @@ export async function getRatesWithMargin(
     const [defaultMargin, snap] = await Promise.all([getMarginPercent(), getDocs(collection(db, "rates"))]);
     if (snap.empty) return { rates: seedRows(defaultMargin), defaultMargin };
     const map = new Map<string, StoredPair>();
-    snap.forEach((d) => map.set(d.id, parseRateDoc(d.data())));
+    snap.forEach((d) => map.set(d.id, parseRateDoc(d.id, d.data())));
     return { rates: buildRates(map, defaultMargin), defaultMargin };
   } catch (err) {
     // strict: the caller has something better to show than placeholder
@@ -179,7 +212,7 @@ export function subscribeLiveRates(onRates: (rates: RateRow[]) => void): () => v
     collection(db, "rates"),
     (snap) => {
       const next = new Map<string, StoredPair>();
-      snap.forEach((d) => next.set(d.id, parseRateDoc(d.data({ serverTimestamps: "estimate" }))));
+      snap.forEach((d) => next.set(d.id, parseRateDoc(d.id, d.data({ serverTimestamps: "estimate" }))));
       map = next;
       emit();
     },
@@ -307,19 +340,33 @@ async function readAllHistory(): Promise<Map<string, RateHistoryPoint[]>> {
   return out;
 }
 
-/** Sets (or clears) a pair-specific margin override, independent of market
- *  price. Pass `percent: null` to remove the override and fall back to the
- *  global default margin (Settings → margin in /admin). High-demand
- *  corridors (e.g. anything involving SDG) can carry a higher margin;
- *  low-demand ones can be priced closer to market to stay competitive. */
-export async function setPairMargin(from: CurrencyCode, to: CurrencyCode, percent: number | null) {
+/** Sets (or clears) the margin for each flow (direction) of one pair,
+ *  independent of price. Pass `null` for a flow to remove its override and
+ *  use the global default margin (Settings → margin in /admin). Lets e.g.
+ *  ZAR → SDG carry a different margin than SDG → ZAR. */
+export async function setFlowMargins(
+  a: CurrencyCode,
+  b: CurrencyCode,
+  margins: { forward: number | null; reverse: number | null }
+) {
   if (!firebaseEnabled || !db) {
     throw new Error("Firebase is not configured — see .env.example.");
   }
-  const key = pairKey(from, to);
+  const pair = PAIRS.find((p) => (p.a === a && p.b === b) || (p.a === b && p.b === a))!;
+  // Normalise to the pair's stored a→b order.
+  const flipped = pair.a !== a;
+  const fwd = flipped ? margins.reverse : margins.forward;
+  const rev = flipped ? margins.forward : margins.reverse;
   await setDoc(
-    doc(db, "rates", key),
-    { marginPercent: percent === null ? deleteField() : percent },
+    doc(db, "rates", pairKey(a, b)),
+    {
+      flowMargins: {
+        [`${pair.a}>${pair.b}`]: fwd === null ? deleteField() : fwd,
+        [`${pair.b}>${pair.a}`]: rev === null ? deleteField() : rev,
+      },
+      // Old pair-wide margin is replaced by the two flow margins above.
+      marginPercent: deleteField(),
+    },
     { merge: true }
   );
 }
@@ -456,11 +503,10 @@ export function convertMid(
 
 /** Margin to book profit at when Ahmed records a sale in `currency` without
  *  naming the other side: the average margin across every pair that
- *  involves that currency. */
+ *  involves that currency, counting each direction. */
 export function averageMarginFor(currency: CurrencyCode, rates: RateRow[]): number | null {
-  const rows = PAIRS.filter((p) => p.a === currency || p.b === currency)
-    .map((p) => rates.find((r) => r.from === p.a && r.to === p.b))
-    .filter((r): r is RateRow => !!r);
+  // Both flows of every pair touching this currency (each flow has its own margin).
+  const rows = rates.filter((r) => r.from === currency || r.to === currency);
   if (rows.length === 0) return null;
   return rows.reduce((s, r) => s + r.marginPercent, 0) / rows.length;
 }
