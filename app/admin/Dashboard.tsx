@@ -133,7 +133,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
       prev.map((r) => {
         if ((r.from === a && r.to === b) || (r.from === b && r.to === a)) {
           const merged = { ...r, ...updates };
-          return { ...merged, rate: computeRate(r.from, r.to, merged.marketPrice, merged.marginPercent) };
+          return { ...merged, rate: computeRate(r.from, r.to, merged.marketPrice, merged.marginPercent, merged) };
         }
         return r;
       })
@@ -193,7 +193,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
       setMargin(val);
       setRates((prev) =>
         prev.map((r) =>
-          r.marginOverride == null ? { ...r, marginPercent: val, rate: computeRate(r.from, r.to, r.marketPrice, val) } : r
+          r.marginOverride == null ? { ...r, marginPercent: val, rate: computeRate(r.from, r.to, r.marketPrice, val, r) } : r
         )
       );
     } catch (err) {
@@ -210,7 +210,13 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
       refreshSite();
       const stamp = new Date().toISOString();
       for (const u of updated) {
-        patchRatePair(u.from, u.to, { marketPrice: u.marketPrice, sdgSource: u.sdgSource, updatedAt: stamp });
+        patchRatePair(u.from, u.to, {
+          marketPrice: u.marketPrice,
+          buyPrice: u.buyPrice,
+          sellPrice: u.sellPrice,
+          sdgSource: u.sdgSource,
+          updatedAt: stamp,
+        });
       }
       setFxMessage(
         skipped.length > 0 ? `✅ ${updated.length} تحديث — تعذر: ${skipped.join(", ")}` : `✅ تم تحديث ${updated.length} زوج`
@@ -232,11 +238,17 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
       setRates((prev) =>
         prev.map((r) => {
           if ((r.from !== "SDG" && r.to !== "SDG") || !r.sdgSource) return r;
-          const newMarketPrice = r.marketPrice * (val / r.sdgSource.usdtToSdg);
+          const ratio = val / r.sdgSource.usdtToSdg;
+          const newMarketPrice = r.marketPrice * ratio;
+          const sides = {
+            buyPrice: r.buyPrice != null ? r.buyPrice * ratio : undefined,
+            sellPrice: r.sellPrice != null ? r.sellPrice * ratio : undefined,
+          };
           return {
             ...r,
             marketPrice: newMarketPrice,
-            rate: computeRate(r.from, r.to, newMarketPrice, r.marginPercent),
+            ...sides,
+            rate: computeRate(r.from, r.to, newMarketPrice, r.marginPercent, sides),
             sdgSource: { usdtToSdg: val, prices: [] },
             updatedAt: new Date().toISOString(),
           };
@@ -471,7 +483,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                                 on ? "text-primary" : "text-subtle line-through decoration-red-500/60"
                               }`}
                             >
-                              {formatSmart(computeRate(x, y, row.marketPrice, row.marginPercent))}
+                              {formatSmart(computeRate(x, y, row.marketPrice, row.marginPercent, row))}
                             </p>
                             <p className={`text-[10px] font-semibold ${on ? "text-emerald-500" : "text-red-500"}`} dir="rtl">
                               {on ? "متاح" : "متوقف"}
@@ -480,6 +492,14 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                         );
                       })}
                     </div>
+
+                    {row.buyPrice != null && row.sellPrice != null && (
+                      <p className="mt-2 text-[11px] text-subtle" dir="ltr">
+                        Binance {a}/{b} — buy{" "}
+                        <span className="font-mono font-semibold text-muted">{formatSmart(row.buyPrice)}</span> · sell{" "}
+                        <span className="font-mono font-semibold text-muted">{formatSmart(row.sellPrice)}</span>
+                      </p>
+                    )}
 
                     {isSdg && row.sdgSource && (
                       <p className="mt-2 text-[11px] text-subtle" dir="ltr">

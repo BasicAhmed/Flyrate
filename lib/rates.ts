@@ -15,6 +15,7 @@ import { getMarginPercent } from "./settings";
 import { roundForDisplay } from "./format";
 import { mergeHistoryEntry, todayDateStr, type RateHistoryPoint } from "./rateHistory";
 import seed from "@/data/rates.seed.json";
+import { pairDocFields, type BinanceQuotes } from "./fx";
 
 /** For SDG pairs only: the raw USDT/SDG data the marketPrice was derived
  *  from, so it can be shown in /admin for verification. */
@@ -26,7 +27,9 @@ export interface SdgSourceDetail {
 export interface RateRow {
   from: CurrencyCode;
   to: CurrencyCode;
-  marketPrice: number; // the pair's single true cross-rate, quoted a-per-b
+  marketPrice: number; // the pair's mid cross-rate, quoted a-per-b (charts, history, bookkeeping)
+  buyPrice?: number; // Binance cost for a → b, quoted a-per-b (higher)
+  sellPrice?: number; // Binance cost for b → a, quoted a-per-b (lower)
   rate: number; // marketPrice adjusted by the profit margin — what customers see/get
   marginPercent: number; // the margin actually applied to this pair (override or global default)
   marginOverride?: number; // set only if this pair has a custom margin; absent = using the global default
@@ -34,22 +37,29 @@ export interface RateRow {
   sdgSource?: SdgSourceDetail;
 }
 
-/** Applies a margin to a pair's single market price to get the
- *  customer-facing rate for ONE direction of that pair.
- *  marketPrice is always quoted as "units of pair.a per 1 unit of pair.b".
- *  a → b (forward): rate = marketPrice * (1 + margin); amount_b = amount_a / rate.
- *  b → a (reverse): rate = marketPrice * (1 - margin); amount_a = amount_b * rate.
- *  Both directions land worse than the fair mid-market cross rate by the
- *  same margin percentage — that's the spread, same % everywhere, exactly
- *  like buying currency below market and selling it above. */
+export interface PairSides {
+  buyPrice?: number;
+  sellPrice?: number;
+}
+
+/** Applies a margin to get the customer-facing rate for ONE direction of a
+ *  pair. All prices are quoted as "units of pair.a per 1 unit of pair.b".
+ *  a → b (forward): rate = buyPrice  * (1 + margin); amount_b = amount_a / rate.
+ *  b → a (reverse): rate = sellPrice * (1 - margin); amount_a = amount_b * rate.
+ *  buyPrice/sellPrice are the real Binance P2P buy/sell costs for each
+ *  direction; if a pair doesn't have them yet (seed data, old docs), the
+ *  mid marketPrice is used for both, same as before. */
 export function computeRate(
   from: CurrencyCode,
   to: CurrencyCode,
   marketPrice: number,
-  marginPercent: number
+  marginPercent: number,
+  sides: PairSides = {}
 ): number {
   const factor = marginPercent / 100;
-  const raw = isForwardDirection(from, to) ? marketPrice * (1 + factor) : marketPrice * (1 - factor);
+  const raw = isForwardDirection(from, to)
+    ? (sides.buyPrice ?? marketPrice) * (1 + factor)
+    : (sides.sellPrice ?? marketPrice) * (1 - factor);
   return roundForDisplay(raw);
 }
 
@@ -60,29 +70,13 @@ function rowsForPair(
   marginPercent: number,
   marginOverride: number | undefined,
   updatedAt: string | null,
-  sdgSource?: SdgSourceDetail
+  sdgSource?: SdgSourceDetail,
+  sides: PairSides = {}
 ): RateRow[] {
+  const shared = { marketPrice, ...sides, marginPercent, marginOverride, updatedAt, sdgSource };
   return [
-    {
-      from,
-      to,
-      marketPrice,
-      rate: computeRate(from, to, marketPrice, marginPercent),
-      marginPercent,
-      marginOverride,
-      updatedAt,
-      sdgSource,
-    },
-    {
-      from: to,
-      to: from,
-      marketPrice,
-      rate: computeRate(to, from, marketPrice, marginPercent),
-      marginPercent,
-      marginOverride,
-      updatedAt,
-      sdgSource,
-    },
+    { from, to, ...shared, rate: computeRate(from, to, marketPrice, marginPercent, sides) },
+    { from: to, to: from, ...shared, rate: computeRate(to, from, marketPrice, marginPercent, sides) },
   ];
 }
 
@@ -94,7 +88,7 @@ function seedRows(defaultMargin: number): RateRow[] {
   });
 }
 
-interface StoredPair {
+interface StoredPair extends PairSides {
   marketPrice: number;
   marginOverride?: number;
   updatedAt: string | null;
@@ -104,6 +98,8 @@ interface StoredPair {
 function parseRateDoc(data: DocumentData): StoredPair {
   return {
     marketPrice: data.marketPrice,
+    buyPrice: typeof data.buyPrice === "number" ? data.buyPrice : undefined,
+    sellPrice: typeof data.sellPrice === "number" ? data.sellPrice : undefined,
     marginOverride: typeof data.marginPercent === "number" ? data.marginPercent : undefined,
     updatedAt: data.updatedAt?.toDate?.().toISOString?.() ?? null,
     sdgSource:
@@ -123,7 +119,8 @@ function buildRates(map: Map<string, StoredPair>, defaultMargin: number): RateRo
   return PAIRS.flatMap(({ a, b }) => {
     const key = pairKey(a, b);
     const entry = map.get(key);
-    const marketPrice = typeof entry?.marketPrice === "number" ? entry.marketPrice : SEED_PRICES.get(key)!;
+    const hasStored = typeof entry?.marketPrice === "number";
+    const marketPrice = hasStored ? entry!.marketPrice : SEED_PRICES.get(key)!;
     return rowsForPair(
       a,
       b,
@@ -131,7 +128,8 @@ function buildRates(map: Map<string, StoredPair>, defaultMargin: number): RateRo
       entry?.marginOverride ?? defaultMargin,
       entry?.marginOverride,
       entry?.updatedAt ?? null,
-      entry?.sdgSource
+      entry?.sdgSource,
+      hasStored ? { buyPrice: entry!.buyPrice, sellPrice: entry!.sellPrice } : {}
     );
   });
 }
@@ -232,6 +230,9 @@ export async function setMarketPrice(
       from,
       to,
       marketPrice,
+      // A hand-typed price replaces Binance's buy/sell until the next auto-update.
+      buyPrice: deleteField(),
+      sellPrice: deleteField(),
       updatedAt: serverTimestamp(),
       ...(sdgSource ? { sdgUsdtToSdg: sdgSource.usdtToSdg, sdgPrices: sdgSource.prices } : {}),
     },
@@ -267,13 +268,17 @@ export async function setSdgUsdtOverride(newUsdtToSdg: number): Promise<void> {
     if (typeof oldMarketPrice !== "number" || typeof oldUsdtToSdg !== "number" || oldUsdtToSdg === 0) {
       continue; // no baseline yet — leave this pair untouched
     }
-    const newMarketPrice = oldMarketPrice * (newUsdtToSdg / oldUsdtToSdg);
+    // SDG is pair.a in every SDG pair, so all three prices scale the same way.
+    const ratio = newUsdtToSdg / oldUsdtToSdg;
+    const newMarketPrice = oldMarketPrice * ratio;
     batch.set(
       doc(db, "rates", key),
       {
         from: a,
         to: b,
         marketPrice: newMarketPrice,
+        ...(typeof data?.buyPrice === "number" ? { buyPrice: data.buyPrice * ratio } : {}),
+        ...(typeof data?.sellPrice === "number" ? { sellPrice: data.sellPrice * ratio } : {}),
         updatedAt: serverTimestamp(),
         sdgUsdtToSdg: newUsdtToSdg,
         sdgPrices: [],
@@ -320,68 +325,62 @@ export async function setPairMargin(from: CurrencyCode, to: CurrencyCode, percen
 }
 
 export interface FxUpdateResult {
-  updated: { from: CurrencyCode; to: CurrencyCode; marketPrice: number; sdgSource?: SdgSourceDetail }[];
+  updated: {
+    from: CurrencyCode;
+    to: CurrencyCode;
+    marketPrice: number;
+    buyPrice: number;
+    sellPrice: number;
+    sdgSource?: SdgSourceDetail;
+  }[];
   skipped: string[];
 }
 
-/** Client-side "update now" — same math and same sources as the daily cron
- *  (app/api/cron/update-rates), but runs on demand from a logged-in admin
- *  session using the normal authenticated client SDK instead of the service
- *  account. Pulls live rates via the same-origin /api/fx relay (avoids
- *  browser CORS issues) — that includes SDG via Binance P2P now, so every
- *  pair updates the same way; the raw SDG offers get stored too. Only
- *  touches market prices, never margin overrides. Returns each updated
- *  pair's new marketPrice/sdgSource so the caller can patch its own state
- *  directly instead of re-fetching the whole collection afterward. */
+/** Client-side "update now" — same Binance P2P source and math as the daily
+ *  cron (app/api/cron/update-rates), run on demand from a logged-in admin
+ *  session. Pulls live buy/sell quotes via the same-origin /api/fx relay
+ *  (avoids browser CORS issues). Only touches prices, never margin
+ *  overrides. Returns each updated pair so the caller can patch its own
+ *  state directly instead of re-fetching the whole collection. */
 export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   if (!firebaseEnabled || !db) {
     throw new Error("Firebase is not configured — see .env.example.");
   }
-  // Live FX and stored history are independent — fetch both at once.
   const [res, history] = await Promise.all([fetch("/api/fx", { cache: "no-store" }), readAllHistory()]);
   const data = await res.json();
-  if (!res.ok || !data.rates) {
-    throw new Error(data?.error ?? "تعذر جلب أسعار الصرف الحالية");
+  if (!res.ok || !data.quotes) {
+    throw new Error(data?.error ?? "تعذر جلب أسعار Binance الحالية");
   }
-  const usdRates = data.rates as Record<string, number>;
-  const sdgSource: SdgSourceDetail | undefined = data.sdgDetail
-    ? { usdtToSdg: data.sdgDetail.usdtToSdg, prices: data.sdgDetail.prices }
-    : undefined;
-  const rateFor = (code: CurrencyCode) => (code === "USDT" ? 1 : usdRates[code]);
+  const quotes = data.quotes as BinanceQuotes;
 
   const updated: FxUpdateResult["updated"] = [];
   const skipped: string[] = [];
 
-  // Every pair's price + history goes out in a single atomic batch (one
-  // round trip) instead of ~3 separate calls per pair.
+  // Every pair's price + history goes out in a single atomic batch.
   const batch = writeBatch(db);
   const today = todayDateStr();
   for (const { a, b } of PAIRS) {
     const key = pairKey(a, b);
-    const rateA = rateFor(a);
-    const rateB = rateFor(b);
-    if (!rateA || !rateB) {
+    const fields = pairDocFields(a, b, quotes);
+    if (!fields) {
       skipped.push(key);
       continue;
     }
-    const marketPrice = rateA / rateB;
-    const involvesSdg = a === "SDG" || b === "SDG";
-    const pairSdgSource = involvesSdg ? sdgSource : undefined;
-    batch.set(
-      doc(db, "rates", key),
-      {
-        from: a,
-        to: b,
-        marketPrice,
-        updatedAt: serverTimestamp(),
-        ...(pairSdgSource ? { sdgUsdtToSdg: pairSdgSource.usdtToSdg, sdgPrices: pairSdgSource.prices } : {}),
-      },
-      { merge: true }
-    );
+    batch.set(doc(db, "rates", key), { from: a, to: b, ...fields, updatedAt: serverTimestamp() }, { merge: true });
     batch.set(doc(db, "rateHistory", key), {
-      entries: mergeHistoryEntry(history.get(key) ?? [], today, marketPrice),
+      entries: mergeHistoryEntry(history.get(key) ?? [], today, fields.marketPrice),
     });
-    updated.push({ from: a, to: b, marketPrice, sdgSource: pairSdgSource });
+    updated.push({
+      from: a,
+      to: b,
+      marketPrice: fields.marketPrice,
+      buyPrice: fields.buyPrice,
+      sellPrice: fields.sellPrice,
+      sdgSource:
+        "sdgUsdtToSdg" in fields && typeof fields.sdgUsdtToSdg === "number"
+          ? { usdtToSdg: fields.sdgUsdtToSdg, prices: fields.sdgPrices ?? [] }
+          : undefined,
+    });
   }
   await batch.commit();
 
