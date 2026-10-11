@@ -9,7 +9,7 @@ const SKIP_ADS = 2;
 const AVG_ADS = 5;
 
 /** Every fiat priced from Binance P2P. USDT itself is always 1. */
-export const BINANCE_FIATS: CurrencyCode[] = ["SDG", "ZAR", "EGP", "MYR", "SAR", "QAR", "AED", "USD"];
+export const BINANCE_FIATS: CurrencyCode[] = ["SDG", "ZAR", "EGP", "MYR", "SAR", "QAR", "AED", "KES", "USD"];
 
 /** One currency's live Binance P2P price, in units of that currency per 1 USDT.
  *  buy  = "Buy USDT" list (what you pay to get USDT — the higher price).

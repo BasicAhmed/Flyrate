@@ -36,6 +36,7 @@ const QUICK_AMOUNTS: Record<CurrencyCode, number[]> = {
   SAR: [200, 500, 2000],
   QAR: [200, 500, 2000],
   AED: [200, 500, 2000],
+  KES: [5000, 10000, 50000],
   USDT: [50, 100, 500],
   USD: [100, 500, 1000],
 };
