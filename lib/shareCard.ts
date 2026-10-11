@@ -132,8 +132,9 @@ async function drawCard(p: P) {
   const code = await qr(`https://${SITE}`, INK, PAPER);
   const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d")!;
   const pts = series(p);
-  const now = new Date();
-  const flightNo = `FR ${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  // Unique-looking transaction id per card, e.g. FR-7K3Q9X (no 0/O/1/I to avoid mix-ups).
+  const ALPH = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const trxnId = "FR-" + Array.from({ length: 6 }, () => ALPH[Math.floor(Math.random() * ALPH.length)]).join("");
 
   /* ---- orange sky ---- */
   const bg = c.createLinearGradient(0, 0, W, H); bg.addColorStop(0, "#FF8A3D"); bg.addColorStop(0.5, OR); bg.addColorStop(1, "#B23A00");
@@ -172,14 +173,13 @@ async function drawCard(p: P) {
   c.beginPath(); c.moveTo(x + 50, y + cut); c.lineTo(x + w - 50, y + cut); c.stroke(); c.restore();
   const L = x + 56, R = x + w - 56;
 
-  /* ---- flight info row: FLIGHT · DATE · CLASS ---- */
+  /* ---- info row: TRXN ID · DATE ---- */
   const info = (label: string, value: string, ix: number, align: CanvasTextAlign) => {
     T(c, label, ix, y + 62, `600 20px ${MONO}`, MUTE, align, "ltr");
     T(c, value, ix, y + 100, `700 30px ${MONO}`, INK, align, "ltr");
   };
-  info("FLIGHT", flightNo, L, "left");
-  info("DATE", todayLabel(), W / 2, "center");
-  info("CLASS", "VIP", R, "right");
+  info("TRXN ID", trxnId, L, "left");
+  info("DATE", todayLabel(), R, "right");
   c.fillStyle = LINE; c.fillRect(L, y + 126, R - L, 2);
 
   /* ---- FROM ✈ TO ---- */
