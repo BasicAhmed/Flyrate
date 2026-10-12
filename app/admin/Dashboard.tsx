@@ -14,7 +14,7 @@ import {
 } from "@/lib/rates";
 import { formatSmart } from "@/lib/format";
 import { formatRelativeTime } from "@/lib/relativeTime";
-import { setMarginPercent } from "@/lib/settings";
+import { setMarginPercent, getAutoUpdate, setAutoUpdate, pingAutoUpdate, type AutoUpdateSettings } from "@/lib/settings";
 import { flowKey, getDisabledFlows, setDisabledFlows } from "@/lib/flows";
 import { PAIRS, CURRENCIES, type CurrencyCode } from "@/lib/corridors";
 import { cacheGet, cacheSet } from "@/lib/localCache";
@@ -90,6 +90,32 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
   const [sdgOverrideInput, setSdgOverrideInput] = useState("");
   const [savingSdgOverride, setSavingSdgOverride] = useState(false);
   const [disabled, setDisabled] = useState<string[]>(cached?.disabled ?? []);
+  const [auto, setAuto] = useState<AutoUpdateSettings | null>(null);
+  const [savingAuto, setSavingAuto] = useState(false);
+
+  // Auto price refresh: load the setting, and keep nudging the server while
+  // /admin is open (it only refreshes when the chosen interval has passed).
+  useEffect(() => {
+    getAutoUpdate().then(setAuto).catch(() => {});
+    pingAutoUpdate();
+    const t = window.setInterval(() => {
+      if (document.visibilityState === "visible") pingAutoUpdate();
+    }, 5 * 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  async function chooseAuto(enabled: boolean, minutes: number) {
+    setSavingAuto(true);
+    setSaveError(null);
+    try {
+      await setAutoUpdate(enabled, minutes);
+      setAuto((prev) => ({ lastRunAt: prev?.lastRunAt ?? null, enabled, minutes }));
+      if (enabled) pingAutoUpdate();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    }
+    setSavingAuto(false);
+  }
 
   // Rates are needed by both tabs (the profit tab converts sales to USD).
   useEffect(() => {
@@ -360,6 +386,44 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                 </button>
               </div>
               {fxMessage && <p className="border-t border-border/60 px-5 py-2.5 text-xs text-muted">{fxMessage}</p>}
+
+              {/* Auto refresh from Binance */}
+              <div className="border-t border-border/60 px-5 py-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-ink">التحديث التلقائي من Binance</p>
+                  {auto?.enabled && auto.lastRunAt && (
+                    <p className="text-[11px] text-subtle">آخر تحديث تلقائي: {formatRelativeTime(auto.lastRunAt)}</p>
+                  )}
+                </div>
+                <div className="mt-2.5 grid grid-cols-5 gap-1 rounded-xl bg-surface2 p-1 shadow-well">
+                  {(
+                    [
+                      [false, 0, "إيقاف"],
+                      [true, 15, "15 د"],
+                      [true, 30, "30 د"],
+                      [true, 60, "ساعة"],
+                      [true, 180, "3 ساعات"],
+                    ] as const
+                  ).map(([en, min, label]) => {
+                    const active = auto ? (en ? auto.enabled && auto.minutes === min : !auto.enabled) : false;
+                    return (
+                      <button
+                        key={label}
+                        onClick={() => chooseAuto(en, en ? min : auto?.minutes ?? 30)}
+                        disabled={savingAuto || !auto}
+                        className={`rounded-lg py-2 text-[11px] font-semibold transition-colors ${
+                          active ? "bg-primary text-white shadow-soft" : "text-muted hover:text-ink"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-subtle">
+                  الأسعار بتتحدث براها كل الفترة دي طالما في زوار في الموقع أو الأدمن مفتوح. تحديث يومي احتياطي بيشتغل دائماً.
+                </p>
+              </div>
 
               <div className="grid gap-4 border-t border-border/60 p-5 sm:grid-cols-2">
                 <div>

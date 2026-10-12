@@ -124,3 +124,39 @@ export async function setStudents(students: Student[]) {
   if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
   await setDoc(doc(db, "settings", "students"), { students, updatedAt: serverTimestamp() });
 }
+
+export interface AutoUpdateSettings {
+  enabled: boolean;
+  minutes: number;
+  lastRunAt: string | null;
+}
+
+/** Auto price refresh from Binance (settings/autoUpdate). Default: on, every 30 min. */
+export async function getAutoUpdate(): Promise<AutoUpdateSettings> {
+  const fallback = { enabled: true, minutes: 30, lastRunAt: null };
+  if (!firebaseEnabled || !db) return fallback;
+  try {
+    const snap = await getDoc(doc(db, "settings", "autoUpdate"));
+    if (!snap.exists()) return fallback;
+    const d = snap.data();
+    return {
+      enabled: d.enabled !== false,
+      minutes: typeof d.minutes === "number" ? d.minutes : 30,
+      lastRunAt: d.lastRunAt?.toDate?.().toISOString?.() ?? null,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+export async function setAutoUpdate(enabled: boolean, minutes: number) {
+  if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
+  // Clearing claimedAt lets the new interval take effect on the next ping.
+  await setDoc(doc(db, "settings", "autoUpdate"), { enabled, minutes, claimedAt: null }, { merge: true });
+}
+
+/** Fire-and-forget nudge: the server refreshes prices only if they're due. */
+export function pingAutoUpdate() {
+  if (typeof window === "undefined") return;
+  fetch("/api/rates/auto", { method: "POST", keepalive: true }).catch(() => {});
+}

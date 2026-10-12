@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { subscribeLiveRates, type RateRow } from "@/lib/rates";
 import { subscribeDisabledFlows } from "@/lib/flows";
+import { pingAutoUpdate } from "@/lib/settings";
 
 interface Live {
   rates: RateRow[];
@@ -37,10 +38,17 @@ export function LiveRatesProvider({
     const start = () => {
       offRates = subscribeLiveRates(setRates);
       offFlows = subscribeDisabledFlows(setDisabledFlows);
+      // Ask the server to refresh from Binance if prices are due; any new
+      // price then arrives through the live listener above.
+      pingAutoUpdate();
     };
     const timer = window.setTimeout(start, 400);
+    const every5min = window.setInterval(() => {
+      if (document.visibilityState === "visible") pingAutoUpdate();
+    }, 5 * 60_000);
     return () => {
       window.clearTimeout(timer);
+      window.clearInterval(every5min);
       offRates();
       offFlows();
     };
