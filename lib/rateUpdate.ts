@@ -1,6 +1,6 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { PAIRS } from "./corridors";
-import { fetchBinanceQuotes, pairDocFields } from "./fx";
+import { fetchBinanceQuotes, pairDocFields, applyManualQuotes, MANUAL_QUOTES_DOC } from "./fx";
 import { mergeHistoryEntry, todayDateStr, type RateHistoryPoint } from "./rateHistory";
 
 /** Server-only. Shared by the daily cron and the auto-update endpoint. */
@@ -16,7 +16,12 @@ export interface UpdateResult {
 
 /** Pulls live Binance P2P prices and writes every pair + today's history. */
 export async function runRateUpdate(db: Firestore): Promise<UpdateResult> {
-  const { quotes, errors, sources } = await fetchBinanceQuotes();
+  const [{ quotes, errors, sources }, manualSnap] = await Promise.all([
+    fetchBinanceQuotes(),
+    db.collection("settings").doc(MANUAL_QUOTES_DOC).get(),
+  ]);
+  applyManualQuotes(quotes, sources, manualSnap.exists ? manualSnap.data() : null);
+  for (const c of Object.keys(sources)) if (sources[c] === "manual") delete errors[c];
   const updated: UpdateResult["updated"] = [];
   const skipped: UpdateResult["skipped"] = [];
 

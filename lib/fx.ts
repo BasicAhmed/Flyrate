@@ -25,6 +25,27 @@ export interface BinanceQuote {
 
 export type BinanceQuotes = Partial<Record<CurrencyCode, BinanceQuote>>;
 
+/** Where a currency's price came from on this run. */
+export type PriceSource = "binance" | "fx" | "manual";
+
+/** settings/manualQuotes — prices typed in /admin, units per 1 USDT,
+ *  e.g. { MYR: 4.25 }. While set, they replace the automatic price. */
+export const MANUAL_QUOTES_DOC = "manualQuotes";
+
+/** Puts admin-typed prices over the automatic ones. Every pair that uses
+ *  that currency is then priced from it. */
+export function applyManualQuotes(
+  quotes: BinanceQuotes,
+  sources: Record<string, PriceSource>,
+  manual: Record<string, unknown> | undefined | null
+) {
+  for (const [code, v] of Object.entries(manual ?? {})) {
+    if (typeof v !== "number" || !(v > 0)) continue;
+    quotes[code as CurrencyCode] = { buy: v, sell: v, mid: v, buyAds: [], sellAds: [] };
+    sources[code] = "manual";
+  }
+}
+
 /** Binance P2P has no official public API — this mirrors the request
  *  Binance's own web app makes for its P2P ad lists. */
 async function fetchSide(fiat: CurrencyCode, tradeType: "BUY" | "SELL"): Promise<number[]> {
@@ -93,11 +114,11 @@ async function fetchFxFallback(): Promise<Record<string, number>> {
 export async function fetchBinanceQuotes(): Promise<{
   quotes: BinanceQuotes;
   errors: Record<string, string>;
-  sources: Record<string, "binance" | "fx">;
+  sources: Record<string, PriceSource>;
 }> {
   const quotes: BinanceQuotes = { USDT: { buy: 1, sell: 1, mid: 1, buyAds: [], sellAds: [] } };
   const errors: Record<string, string> = {};
-  const sources: Record<string, "binance" | "fx"> = {};
+  const sources: Record<string, PriceSource> = {};
   const results = await Promise.allSettled(BINANCE_FIATS.map(fetchQuote));
   const missing: CurrencyCode[] = [];
   results.forEach((r, i) => {
@@ -163,15 +184,16 @@ export function pairDocFields(
   a: CurrencyCode,
   b: CurrencyCode,
   quotes: BinanceQuotes,
-  sources: Record<string, "binance" | "fx"> = {}
+  sources: Record<string, PriceSource> = {}
 ) {
   const prices = pairPrices(a, b, quotes);
   if (!prices) return null;
   const sdg = a === "SDG" || b === "SDG" ? quotes.SDG : undefined;
-  const usesFx = sources[a] === "fx" || sources[b] === "fx";
+  const tag = (c: CurrencyCode) => sources[c] ?? "binance";
+  const extra = [...new Set([tag(a), tag(b)].filter((t) => t !== "binance"))];
   return {
     ...prices,
-    source: usesFx ? "binance-p2p+fx" : "binance-p2p",
+    source: ["binance-p2p", ...extra].join("+"),
     binance: { [a]: quotes[a], [b]: quotes[b] },
     ...(sdg ? { sdgUsdtToSdg: sdg.mid, sdgPrices: [...sdg.buyAds, ...sdg.sellAds] } : {}),
   };

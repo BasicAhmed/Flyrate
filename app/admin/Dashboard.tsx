@@ -14,7 +14,15 @@ import {
 } from "@/lib/rates";
 import { formatSmart } from "@/lib/format";
 import { formatRelativeTime } from "@/lib/relativeTime";
-import { setMarginPercent, getAutoUpdate, setAutoUpdate, pingAutoUpdate, type AutoUpdateSettings } from "@/lib/settings";
+import {
+  setMarginPercent,
+  getAutoUpdate,
+  setAutoUpdate,
+  pingAutoUpdate,
+  getManualQuote,
+  setManualQuote,
+  type AutoUpdateSettings,
+} from "@/lib/settings";
 import { flowKey, getDisabledFlows, setDisabledFlows } from "@/lib/flows";
 import { PAIRS, CURRENCIES, type CurrencyCode } from "@/lib/corridors";
 import { cacheGet, cacheSet } from "@/lib/localCache";
@@ -92,11 +100,15 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
   const [disabled, setDisabled] = useState<string[]>(cached?.disabled ?? []);
   const [auto, setAuto] = useState<AutoUpdateSettings | null>(null);
   const [savingAuto, setSavingAuto] = useState(false);
+  const [manualMyr, setManualMyr] = useState<number | null>(null);
+  const [myrInput, setMyrInput] = useState("");
+  const [savingMyr, setSavingMyr] = useState(false);
 
   // Auto price refresh: load the setting, and keep nudging the server while
   // /admin is open (it only refreshes when the chosen interval has passed).
   useEffect(() => {
     getAutoUpdate().then(setAuto).catch(() => {});
+    getManualQuote("MYR").then(setManualMyr).catch(() => {});
     pingAutoUpdate();
     const t = window.setInterval(() => {
       if (document.visibilityState === "visible") pingAutoUpdate();
@@ -144,6 +156,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
     if (authReady && ratesLoaded) setProfitOpened(true);
   }, [authReady, ratesLoaded]);
 
+  const currentMyrUsdt = rates.find((r) => r.from === "MYR" && r.to === "USD")?.marketPrice;
   const currentSdgUsdt = rates.find((r) => (r.from === "SDG" || r.to === "SDG") && r.sdgSource)?.sdgSource?.usdtToSdg;
   const lastUpdated = rates
     .map((r) => r.updatedAt)
@@ -267,6 +280,23 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
       setFxMessage(`❌ ${err instanceof Error ? err.message : String(err)}`);
     }
     setFxUpdating(false);
+  }
+
+  /** USDT/MYR typed by hand (null = back to automatic). Every MYR pair is
+   *  re-priced from it straight away, and auto-updates keep using it. */
+  async function saveMyr(price: number | null) {
+    if (price !== null && !(price > 0)) return;
+    setSavingMyr(true);
+    setSaveError(null);
+    try {
+      await setManualQuote("MYR", price);
+      setManualMyr(price);
+      setMyrInput("");
+      await updateNow();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    }
+    setSavingMyr(false);
   }
 
   async function saveSdgOverride() {
@@ -446,6 +476,48 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                       حفظ
                     </SmallButton>
                   </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-subtle">
+                    سعر USDT/MYR — الحالي{" "}
+                    <span className="font-mono font-semibold text-ink">
+                      {(manualMyr ?? currentMyrUsdt)?.toFixed(3) ?? "—"}
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        manualMyr ? "bg-accent/15 text-accent" : "bg-surface2 text-muted"
+                      }`}
+                    >
+                      {manualMyr ? "يدوي" : "تلقائي"}
+                    </span>
+                  </label>
+                  <div className="flex gap-2" dir="ltr">
+                    <input
+                      type="number"
+                      step="any"
+                      inputMode="decimal"
+                      value={myrInput}
+                      onChange={(e) => setMyrInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && saveMyr(parseFloat(myrInput))}
+                      placeholder="مثلاً 4.25"
+                      className="field flex-1 px-3.5 py-2.5 font-mono text-sm font-semibold"
+                    />
+                    <SmallButton onClick={() => saveMyr(parseFloat(myrInput))} busy={savingMyr}>
+                      تطبيق
+                    </SmallButton>
+                  </div>
+                  {manualMyr ? (
+                    <button
+                      onClick={() => saveMyr(null)}
+                      disabled={savingMyr}
+                      className="mt-1.5 text-[11px] font-semibold text-primary hover:underline"
+                    >
+                      رجوع للسعر التلقائي
+                    </button>
+                  ) : (
+                    <p className="mt-1.5 text-[11px] text-subtle">كم رينجت مقابل 1 USDT — بيتطبق على كل أزواج MYR.</p>
+                  )}
                 </div>
 
                 {currentSdgUsdt !== undefined && (

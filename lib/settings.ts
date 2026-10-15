@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, deleteField } from "firebase/firestore";
 import { db, firebaseEnabled } from "./firebase";
 
 const DEFAULT_MARGIN_PERCENT = 3.5;
@@ -159,4 +159,22 @@ export async function setAutoUpdate(enabled: boolean, minutes: number) {
 export function pingAutoUpdate() {
   if (typeof window === "undefined") return;
   fetch("/api/rates/auto", { method: "POST", keepalive: true }).catch(() => {});
+}
+
+/** Admin-typed price for one currency, in units per 1 USDT (e.g. MYR 4.25).
+ *  null = automatic. Read from settings/manualQuotes. */
+export async function getManualQuote(code: string): Promise<number | null> {
+  if (!firebaseEnabled || !db) return null;
+  try {
+    const snap = await getDoc(doc(db, "settings", "manualQuotes"));
+    const v = snap.exists() ? snap.data()[code] : undefined;
+    return typeof v === "number" && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setManualQuote(code: string, price: number | null) {
+  if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
+  await setDoc(doc(db, "settings", "manualQuotes"), { [code]: price ?? deleteField() }, { merge: true });
 }

@@ -1,6 +1,7 @@
 import {
   collection,
   getDocs,
+  getDoc,
   doc,
   setDoc,
   deleteField,
@@ -15,7 +16,7 @@ import { getMarginPercent } from "./settings";
 import { roundForDisplay } from "./format";
 import { mergeHistoryEntry, todayDateStr, type RateHistoryPoint } from "./rateHistory";
 import seed from "@/data/rates.seed.json";
-import { pairDocFields, type BinanceQuotes } from "./fx";
+import { pairDocFields, applyManualQuotes, MANUAL_QUOTES_DOC, type BinanceQuotes, type PriceSource } from "./fx";
 
 /** For SDG pairs only: the raw USDT/SDG data the marketPrice was derived
  *  from, so it can be shown in /admin for verification. */
@@ -393,13 +394,18 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   if (!firebaseEnabled || !db) {
     throw new Error("Firebase is not configured — see .env.example.");
   }
-  const [res, history] = await Promise.all([fetch("/api/fx", { cache: "no-store" }), readAllHistory()]);
+  const [res, history, manualSnap] = await Promise.all([
+    fetch("/api/fx", { cache: "no-store" }),
+    readAllHistory(),
+    getDoc(doc(db, "settings", MANUAL_QUOTES_DOC)).catch(() => null),
+  ]);
   const data = await res.json();
   if (!res.ok || !data.quotes) {
     throw new Error(data?.error ?? "تعذر جلب أسعار Binance الحالية");
   }
   const quotes = data.quotes as BinanceQuotes;
-  const sources = (data.sources ?? {}) as Record<string, "binance" | "fx">;
+  const sources = (data.sources ?? {}) as Record<string, PriceSource>;
+  applyManualQuotes(quotes, sources, manualSnap?.exists() ? manualSnap.data() : null);
 
   const updated: FxUpdateResult["updated"] = [];
   const skipped: string[] = [];
