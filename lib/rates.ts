@@ -399,6 +399,7 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
     throw new Error(data?.error ?? "تعذر جلب أسعار Binance الحالية");
   }
   const quotes = data.quotes as BinanceQuotes;
+  const sources = (data.sources ?? {}) as Record<string, "binance" | "fx">;
 
   const updated: FxUpdateResult["updated"] = [];
   const skipped: string[] = [];
@@ -408,7 +409,7 @@ export async function updateRatesFromLiveFx(): Promise<FxUpdateResult> {
   const today = todayDateStr();
   for (const { a, b } of PAIRS) {
     const key = pairKey(a, b);
-    const fields = pairDocFields(a, b, quotes);
+    const fields = pairDocFields(a, b, quotes, sources);
     if (!fields) {
       skipped.push(key);
       continue;

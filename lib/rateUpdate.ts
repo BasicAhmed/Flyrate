@@ -16,7 +16,7 @@ export interface UpdateResult {
 
 /** Pulls live Binance P2P prices and writes every pair + today's history. */
 export async function runRateUpdate(db: Firestore): Promise<UpdateResult> {
-  const { quotes, errors } = await fetchBinanceQuotes();
+  const { quotes, errors, sources } = await fetchBinanceQuotes();
   const updated: UpdateResult["updated"] = [];
   const skipped: UpdateResult["skipped"] = [];
 
@@ -28,7 +28,7 @@ export async function runRateUpdate(db: Firestore): Promise<UpdateResult> {
   const today = todayDateStr();
   for (const { a, b } of PAIRS) {
     const key = `${a}_${b}`;
-    const fields = pairDocFields(a, b, quotes);
+    const fields = pairDocFields(a, b, quotes, sources);
     if (!fields) {
       skipped.push({ pair: key, reason: errors[a] ?? errors[b] ?? "no Binance price" });
       continue;

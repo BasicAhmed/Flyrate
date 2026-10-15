@@ -74,21 +74,65 @@ async function fetchQuote(fiat: CurrencyCode): Promise<BinanceQuote> {
   return { buy, sell, mid: (buy + sell) / 2, buyAds: buyAds ?? [], sellAds: sellAds ?? [] };
 }
 
-/** Live Binance P2P buy/sell for every currency at once. A currency that
- *  fails is listed in `errors` and its pairs are skipped for this run —
- *  the price already stored stays in place. USD falls back to 1 (same as
- *  USDT) if Binance has no USD ads. */
-export async function fetchBinanceQuotes(): Promise<{ quotes: BinanceQuotes; errors: Record<string, string> }> {
+const FX_FALLBACK_URL = "https://open.er-api.com/v6/latest/USD";
+
+/** Normal market rates (units per 1 USD), used only for currencies Binance
+ *  P2P doesn't have — e.g. MYR, since Binance P2P has no ringgit market. */
+async function fetchFxFallback(): Promise<Record<string, number>> {
+  const res = await fetch(FX_FALLBACK_URL, { cache: "no-store" });
+  if (!res.ok) throw new Error(`FX fallback HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.result !== "success" || !data.rates) throw new Error("FX fallback returned no rates");
+  return data.rates as Record<string, number>;
+}
+
+/** Live buy/sell for every currency at once. Binance P2P first; any
+ *  currency Binance can't price falls back to the normal market rate
+ *  (USDT treated as USD), so its pairs still update with the rest.
+ *  `sources` says where each currency's price came from. */
+export async function fetchBinanceQuotes(): Promise<{
+  quotes: BinanceQuotes;
+  errors: Record<string, string>;
+  sources: Record<string, "binance" | "fx">;
+}> {
   const quotes: BinanceQuotes = { USDT: { buy: 1, sell: 1, mid: 1, buyAds: [], sellAds: [] } };
   const errors: Record<string, string> = {};
+  const sources: Record<string, "binance" | "fx"> = {};
   const results = await Promise.allSettled(BINANCE_FIATS.map(fetchQuote));
+  const missing: CurrencyCode[] = [];
   results.forEach((r, i) => {
     const fiat = BINANCE_FIATS[i];
-    if (r.status === "fulfilled") quotes[fiat] = r.value;
-    else if (fiat === "USD") quotes.USD = { buy: 1, sell: 1, mid: 1, buyAds: [], sellAds: [] };
-    else errors[fiat] = r.reason instanceof Error ? r.reason.message : String(r.reason);
+    if (r.status === "fulfilled") {
+      quotes[fiat] = r.value;
+      sources[fiat] = "binance";
+    } else {
+      missing.push(fiat);
+      errors[fiat] = r.reason instanceof Error ? r.reason.message : String(r.reason);
+    }
   });
-  return { quotes, errors };
+
+  if (missing.length > 0) {
+    try {
+      const fx = await fetchFxFallback();
+      for (const fiat of missing) {
+        const rate = fiat === "USD" ? 1 : fx[fiat];
+        if (typeof rate === "number" && rate > 0) {
+          quotes[fiat] = { buy: rate, sell: rate, mid: rate, buyAds: [], sellAds: [] };
+          sources[fiat] = "fx";
+          delete errors[fiat];
+        }
+      }
+    } catch (err) {
+      // Keep the Binance errors; those pairs keep their stored price.
+      if (missing.includes("USD")) {
+        quotes.USD = { buy: 1, sell: 1, mid: 1, buyAds: [], sellAds: [] };
+        sources.USD = "fx";
+        delete errors.USD;
+      }
+      void err;
+    }
+  }
+  return { quotes, errors, sources };
 }
 
 /** The three prices stored for one pair, all quoted as units of `a` per 1 `b`:
@@ -115,13 +159,19 @@ export function pairPrices(
 
 /** Fields written to a pair's Firestore doc on every auto-update. The SDG
  *  fields keep the admin's USDT/SDG display + manual override working. */
-export function pairDocFields(a: CurrencyCode, b: CurrencyCode, quotes: BinanceQuotes) {
+export function pairDocFields(
+  a: CurrencyCode,
+  b: CurrencyCode,
+  quotes: BinanceQuotes,
+  sources: Record<string, "binance" | "fx"> = {}
+) {
   const prices = pairPrices(a, b, quotes);
   if (!prices) return null;
   const sdg = a === "SDG" || b === "SDG" ? quotes.SDG : undefined;
+  const usesFx = sources[a] === "fx" || sources[b] === "fx";
   return {
     ...prices,
-    source: "binance-p2p",
+    source: usesFx ? "binance-p2p+fx" : "binance-p2p",
     binance: { [a]: quotes[a], [b]: quotes[b] },
     ...(sdg ? { sdgUsdtToSdg: sdg.mid, sdgPrices: [...sdg.buyAds, ...sdg.sellAds] } : {}),
   };

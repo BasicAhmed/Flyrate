@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
  *  read-only public price data. */
 export async function GET() {
   try {
-    const { quotes, errors } = await fetchBinanceQuotes();
-    return NextResponse.json({ quotes, errors });
+    const { quotes, errors, sources } = await fetchBinanceQuotes();
+    return NextResponse.json({ quotes, errors, sources });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },
