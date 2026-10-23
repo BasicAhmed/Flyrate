@@ -67,6 +67,7 @@ export default function CapitalCard({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [showAllMoves, setShowAllMoves] = useState(false);
 
   useEffect(() => {
     setFailed(false);
@@ -200,7 +201,8 @@ export default function CapitalCard({
   if (!s) return null;
   const netMoves = s.deposits - s.withdrawals;
   const projection30 = s.current + s.avgDailyProfit * 30;
-  const recentMoves = cap.moves.slice(0, 5);
+  const sortedMoves = [...cap.moves].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const recentMoves = showAllMoves ? sortedMoves : sortedMoves.slice(0, 5);
 
   /* ---------- summary ---------- */
   return (
@@ -386,6 +388,14 @@ export default function CapitalCard({
               </li>
             ))}
           </ul>
+        )}
+        {sortedMoves.length > 5 && (
+          <button
+            onClick={() => setShowAllMoves((v) => !v)}
+            className="mt-2 w-full rounded-xl py-2 text-[11px] font-semibold text-primary hover:bg-primary/5"
+          >
+            {showAllMoves ? "عرض أقل" : `عرض الكل (${sortedMoves.length})`}
+          </button>
         )}
       </div>
     </div>

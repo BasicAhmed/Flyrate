@@ -9,6 +9,7 @@ import { addSale, deleteSale, getSales, type SaleEntry } from "@/lib/sales";
 import { CURRENCIES, type CurrencyCode } from "@/lib/corridors";
 import { cacheGet, cacheSet } from "@/lib/localCache";
 import CapitalCard from "./CapitalCard";
+import HistoryPanel from "./HistoryPanel";
 
 function todayStr() {
   const d = new Date();
@@ -467,6 +468,7 @@ export default function ProfitTab({
 
       {view === "reports" && (
         <>
+          <HistoryPanel sales={sales} today={today} onDelete={remove} deleting={deleting} />
           {/* This month by currency */}
           {stats.byCurrency.length > 0 && (
             <div className="card overflow-hidden p-0">
