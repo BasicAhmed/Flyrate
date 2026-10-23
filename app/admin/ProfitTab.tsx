@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { BarChart3, CalendarDays, HandCoins, Landmark, Pencil, Plus, RefreshCw, Target, Trash2, X } from "lucide-react";
+import { CalendarDays, Pencil, Plus, RefreshCw, Target, Trash2, X } from "lucide-react";
 import { convertMid, type RateRow } from "@/lib/rates";
 import { getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, deleteSale, getSales, type SaleEntry } from "@/lib/sales";
@@ -45,21 +45,16 @@ function suggestedMargin(currency: CurrencyCode, rates: RateRow[], defaultMargin
   return margins.size === 1 ? [...margins][0] : defaultMargin;
 }
 
-type View = "add" | "capital" | "debts" | "reports";
-
-const VIEWS: { id: View; label: string; icon: typeof BarChart3 }[] = [
-  { id: "add", label: "تسجيل عملية", icon: Plus },
-  { id: "capital", label: "رأس المال", icon: Landmark },
-  { id: "debts", label: "المستحقات", icon: HandCoins },
-  { id: "reports", label: "التقارير", icon: BarChart3 },
-];
+export type View = "add" | "capital" | "debts" | "reports";
 
 export default function ProfitTab({
   rates,
   defaultMargin,
   authReady,
   onError,
+  view,
 }: {
+  view: View; // which section the bottom bar has open
   rates: RateRow[];
   defaultMargin: number;
   authReady: boolean; // sales are private — only readable once the session is restored
@@ -72,12 +67,6 @@ export default function ProfitTab({
   const [targetInput, setTargetInput] = useState(String(cached?.target ?? 2000));
   const [savingTarget, setSavingTarget] = useState(false);
   const [editingTarget, setEditingTarget] = useState(false);
-  // Which section is open — remembered on this device so it reopens where you left off.
-  const [view, setViewState] = useState<View>(() => cacheGet<View>("profitView") ?? "add");
-  const setView = (v: View) => {
-    setViewState(v);
-    cacheSet("profitView", v);
-  };
 
   // Form
   const [date, setDate] = useState(todayStr());
@@ -206,7 +195,8 @@ export default function ProfitTab({
 
   return (
     <div className="mt-5 space-y-4">
-      {/* Summary — always visible, one card */}
+      {/* Summary — on the sale and reports screens */}
+      {(view === "add" || view === "reports") && (
       <div className="card relative overflow-hidden p-4">
         <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-primary/15 via-primary/5 to-accent/10" />
         <div className="relative">
@@ -291,21 +281,7 @@ export default function ProfitTab({
           </div>
         </div>
       </div>
-
-      {/* Section switcher */}
-      <div className="grid grid-cols-4 gap-1 rounded-2xl border border-border/60 bg-surface p-1 shadow-soft">
-        {VIEWS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setView(id)}
-            className={`flex flex-col items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-semibold transition-colors sm:flex-row sm:gap-1.5 sm:text-xs ${
-              view === id ? "bg-primary text-white shadow-soft" : "text-muted hover:text-ink"
-            }`}
-          >
-            <Icon size={14} /> {label}
-          </button>
-        ))}
-      </div>
+      )}
 
       {view === "add" && (
         <>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { ArrowLeftRight, LogOut, Power, RefreshCw, TrendingUp, Wallet } from "lucide-react";
+import { ArrowLeftRight, BarChart3, HandCoins, Landmark, LogOut, PlusCircle, Power, RefreshCw, TrendingUp } from "lucide-react";
 import {
   getRatesWithMargin,
   setFlowMargins,
@@ -27,9 +27,18 @@ import { flowKey, getDisabledFlows, setDisabledFlows } from "@/lib/flows";
 import { PAIRS, CURRENCIES, type CurrencyCode } from "@/lib/corridors";
 import { cacheGet, cacheSet } from "@/lib/localCache";
 import { refreshSite } from "@/lib/refreshSite";
-import ProfitTab from "./ProfitTab";
+import ProfitTab, { type View as ProfitView } from "./ProfitTab";
 
-type Tab = "rates" | "profit";
+type Tab = ProfitView | "rates";
+
+/** Bottom bar — every admin screen is one tap away. */
+const NAV: { id: Tab; label: string; icon: typeof TrendingUp }[] = [
+  { id: "add", label: "تسجيل", icon: PlusCircle },
+  { id: "rates", label: "الأسعار", icon: TrendingUp },
+  { id: "capital", label: "رأس المال", icon: Landmark },
+  { id: "debts", label: "المستحقات", icon: HandCoins },
+  { id: "reports", label: "التقارير", icon: BarChart3 },
+];
 
 function Spinner() {
   return (
@@ -79,7 +88,17 @@ interface RatesCache {
 }
 
 export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: () => void; authReady: boolean }) {
-  const [tab, setTab] = useState<Tab>("rates");
+  const [tab, setTabState] = useState<Tab>(() => {
+    const t = cacheGet<Tab>("adminTab");
+    return t && NAV.some((n) => n.id === t) ? t : "add";
+  });
+  const [lastProfitView, setLastProfitView] = useState<ProfitView>(tab === "rates" ? "add" : tab);
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    if (t !== "rates") setLastProfitView(t);
+    cacheSet("adminTab", t);
+    window.scrollTo({ top: 0 });
+  };
   // Last-known data from this device — on screen instantly, replaced by the
   // fresh copy a moment later.
   const [cached] = useState(() => cacheGet<RatesCache>("rates"));
@@ -334,7 +353,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
   }
 
   return (
-    <div className="min-h-screen pb-16">
+    <div className="min-h-screen pb-32">
       <header className="sticky top-0 z-30 border-b border-border/60 bg-bg/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-3">
           <div className="flex items-center gap-3">
@@ -359,32 +378,6 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
       </header>
 
       <div className="mx-auto max-w-3xl px-5 pt-6">
-        <div className="grid grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-surface2 p-1 shadow-well">
-          {(
-            [
-              ["rates", "الأسعار", TrendingUp],
-              ["profit", "الأرباح", Wallet],
-            ] as const
-          ).map(([value, label, Icon]) => (
-            <button
-              key={value}
-              onClick={() => setTab(value)}
-              className="relative flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold"
-            >
-              {tab === value && (
-                <motion.span
-                  layoutId="admin-tab"
-                  transition={{ type: "spring", stiffness: 400, damping: 32 }}
-                  className="absolute inset-0 rounded-xl bg-primary shadow-glow"
-                />
-              )}
-              <span className={`relative flex items-center gap-2 ${tab === value ? "text-bg" : "text-muted"}`}>
-                <Icon size={15} /> {label}
-              </span>
-            </button>
-          ))}
-        </div>
-
         {saveError && (
           <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-500">
             فشل الحفظ: {saveError}
@@ -393,9 +386,15 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
 
         {!ratesLoaded && <Spinner />}
 
-        {ratesLoaded && (profitOpened || tab === "profit") && (
-          <div className={tab === "profit" ? "" : "hidden"}>
-            <ProfitTab rates={rates} defaultMargin={margin} authReady={authReady} onError={setSaveError} />
+        {ratesLoaded && (profitOpened || tab !== "rates") && (
+          <div className={tab !== "rates" ? "" : "hidden"}>
+            <ProfitTab
+              view={tab === "rates" ? lastProfitView : tab}
+              rates={rates}
+              defaultMargin={margin}
+              authReady={authReady}
+              onError={setSaveError}
+            />
           </div>
         )}
 
@@ -709,6 +708,42 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
           </div>
         )}
       </div>
+
+      {/* Bottom navigation */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-surface/95 backdrop-blur-xl"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <div className="mx-auto grid max-w-3xl grid-cols-5">
+          {NAV.map(({ id, label, icon: Icon }) => {
+            const active = tab === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                aria-current={active ? "page" : undefined}
+                className="relative flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold"
+              >
+                {active && (
+                  <motion.span
+                    layoutId="admin-nav"
+                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    className="absolute inset-x-3 top-0 h-[3px] rounded-b-full bg-primary"
+                  />
+                )}
+                <span
+                  className={`flex size-9 items-center justify-center rounded-xl transition-colors ${
+                    active ? "bg-primary/10 text-primary" : "text-subtle"
+                  }`}
+                >
+                  <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+                </span>
+                <span className={active ? "text-primary" : "text-muted"}>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }
