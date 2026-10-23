@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { BarChart3, CalendarDays, Landmark, Pencil, Plus, RefreshCw, Target, Trash2, X } from "lucide-react";
+import { BarChart3, CalendarDays, HandCoins, Landmark, Pencil, Plus, RefreshCw, Target, Trash2, X } from "lucide-react";
 import { convertMid, type RateRow } from "@/lib/rates";
 import { getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, deleteSale, getSales, type SaleEntry } from "@/lib/sales";
@@ -10,6 +10,7 @@ import { CURRENCIES, type CurrencyCode } from "@/lib/corridors";
 import { cacheGet, cacheSet } from "@/lib/localCache";
 import CapitalCard from "./CapitalCard";
 import HistoryPanel from "./HistoryPanel";
+import DebtsPanel from "./DebtsPanel";
 
 function todayStr() {
   const d = new Date();
@@ -44,11 +45,12 @@ function suggestedMargin(currency: CurrencyCode, rates: RateRow[], defaultMargin
   return margins.size === 1 ? [...margins][0] : defaultMargin;
 }
 
-type View = "add" | "capital" | "reports";
+type View = "add" | "capital" | "debts" | "reports";
 
 const VIEWS: { id: View; label: string; icon: typeof BarChart3 }[] = [
   { id: "add", label: "تسجيل عملية", icon: Plus },
   { id: "capital", label: "رأس المال", icon: Landmark },
+  { id: "debts", label: "المستحقات", icon: HandCoins },
   { id: "reports", label: "التقارير", icon: BarChart3 },
 ];
 
@@ -291,12 +293,12 @@ export default function ProfitTab({
       </div>
 
       {/* Section switcher */}
-      <div className="grid grid-cols-3 gap-1 rounded-2xl border border-border/60 bg-surface p-1 shadow-soft">
+      <div className="grid grid-cols-4 gap-1 rounded-2xl border border-border/60 bg-surface p-1 shadow-soft">
         {VIEWS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setView(id)}
-            className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-semibold transition-colors ${
+            className={`flex flex-col items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-semibold transition-colors sm:flex-row sm:gap-1.5 sm:text-xs ${
               view === id ? "bg-primary text-white shadow-soft" : "text-muted hover:text-ink"
             }`}
           >
@@ -465,6 +467,8 @@ export default function ProfitTab({
       )}
 
       {view === "capital" && <CapitalCard sales={sales} today={today} onError={onError} />}
+
+      {view === "debts" && <DebtsPanel today={today} onError={onError} />}
 
       {view === "reports" && (
         <>

@@ -139,6 +139,10 @@ export default function CapitalCard({
 
   async function removeMove(m: CapitalMove) {
     if (!cap) return;
+    if (m.debtId) {
+      window.alert("الحركة دي جاية من المستحقات — احذفها من هناك عشان الدين ورأس المال يفضلوا متطابقين.");
+      return;
+    }
     if (!window.confirm(`حذف ${m.type === "deposit" ? "إيداع" : "سحب"} ${usd(m.amount)}؟`)) return;
     await persist({ ...cap, moves: cap.moves.filter((x) => x.id !== m.id) });
   }

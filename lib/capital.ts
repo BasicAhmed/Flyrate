@@ -9,6 +9,10 @@ export interface CapitalMove {
   type: "deposit" | "withdraw";
   amount: number; // USD, always positive
   note?: string;
+  /** Set when this move was created by a debt entry (المستحقات), so the
+   *  two stay linked and are deleted together. */
+  debtId?: string;
+  debtEntryId?: string;
 }
 
 export interface CapitalSettings {
