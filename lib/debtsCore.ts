@@ -11,6 +11,8 @@ export interface DebtEntry {
   type: DebtEntryType;
   amount: number; // USD, positive
   note?: string;
+  /** false = recorded on the debt only, capital untouched. Missing = true. */
+  capital?: boolean;
 }
 
 export interface DebtAccount {
@@ -63,6 +65,7 @@ export type DebtAction =
       amount: number;
       date: string;
       note?: string;
+      affectsCapital?: boolean; // default true
     }
   | { action: "deleteEntry"; accountId: string; entryId: string }
   | { action: "deleteAccount"; accountId: string };
@@ -97,9 +100,11 @@ export function applyDebtAction(
       type: a.type === "payment" ? "payment" : "draw",
       amount: Math.round(a.amount * 100) / 100,
       ...(a.note?.trim() ? { note: a.note.trim().slice(0, 200) } : {}),
+      ...(a.affectsCapital === false ? { capital: false } : {}),
     };
     acc.entries = [entry, ...acc.entries].sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : 0));
-    return { accounts: list, cap: cap ? { ...cap, moves: [moveFor(acc, entry), ...cap.moves] } : null };
+    const linked = cap && entry.capital !== false;
+    return { accounts: list, cap: linked ? { ...cap!, moves: [moveFor(acc, entry), ...cap!.moves] } : cap };
   }
 
   if (a.action === "deleteEntry") {

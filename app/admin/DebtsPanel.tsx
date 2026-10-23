@@ -61,6 +61,7 @@ export default function DebtsPanel({
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(today);
   const [note, setNote] = useState("");
+  const [affectsCapital, setAffectsCapital] = useState(true);
 
   useEffect(() => {
     if (!authReady) return;
@@ -110,6 +111,7 @@ export default function DebtsPanel({
     setAmount("");
     setNote("");
     setDate(today);
+    setAffectsCapital(true);
   }
 
   async function run(fn: () => Promise<{ accounts: DebtAccount[] }>) {
@@ -128,7 +130,7 @@ export default function DebtsPanel({
     const amt = cleanNum(amount);
     if (!newKind || !name.trim() || amt <= 0) return;
     const kind = newKind;
-    run(() => addDebtEntry({ accountId: null, name, phone, kind, type: "draw", amount: amt, date, note })).then(() =>
+    run(() => addDebtEntry({ accountId: null, name, phone, kind, type: "draw", amount: amt, date, note, affectsCapital })).then(() =>
       setFilter(kind)
     );
   }
@@ -137,7 +139,7 @@ export default function DebtsPanel({
     const amt = cleanNum(amount);
     if (!entryFor || amt <= 0) return;
     const { id, type } = entryFor;
-    run(() => addDebtEntry({ accountId: id, type, amount: amt, date, note }));
+    run(() => addDebtEntry({ accountId: id, type, amount: amt, date, note, affectsCapital }));
   }
 
   const amountFields = (onSave: () => void, hint: string, cta: string) => (
@@ -165,7 +167,27 @@ export default function DebtsPanel({
         />
       </div>
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="ملاحظة (اختياري)" className="field px-3 py-2 text-xs" />
-      <p className="text-[11px] text-subtle">{hint}</p>
+      {/* Does this touch capital? */}
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-surface p-1 shadow-well">
+        {(
+          [
+            [true, "من رأس المال"],
+            [false, "خارج رأس المال"],
+          ] as const
+        ).map(([v, l]) => (
+          <button
+            key={l}
+            type="button"
+            onClick={() => setAffectsCapital(v)}
+            className={`rounded-lg py-2 text-[11px] font-semibold transition-colors ${
+              affectsCapital === v ? "bg-primary text-white shadow-soft" : "text-muted hover:text-ink"
+            }`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-subtle">{affectsCapital ? hint : "بيتسجل على الدين بس — رأس المال ما بيتأثر"}</p>
       <button onClick={onSave} disabled={busy || cleanNum(amount) <= 0} className="btn-primary w-full py-2.5 text-xs">
         {busy ? "جارٍ الحفظ…" : cta}
       </button>
@@ -355,7 +377,7 @@ export default function DebtsPanel({
 
                         <ul className="space-y-1.5">
                           {withBal.map(({ e, bal }) => {
-                            const cap = capitalEffect(a.kind, e.type, e.amount);
+                            const cap = e.capital === false ? 0 : capitalEffect(a.kind, e.type, e.amount);
                             return (
                               <li key={e.id} className="flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
                                 <span
@@ -368,8 +390,8 @@ export default function DebtsPanel({
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-xs text-ink">{e.note || ENTRY_LABEL[e.type]}</p>
                                   <p className="font-mono text-[10px] text-subtle" dir="ltr">
-                                    {e.date} · owed {usd(bal, 0)} · capital {cap >= 0 ? "+" : "−"}
-                                    {usd(Math.abs(cap), 0)}
+                                    {e.date} · owed {usd(bal, 0)} ·{" "}
+                                    {e.capital === false ? "no capital" : `capital ${cap >= 0 ? "+" : "−"}${usd(Math.abs(cap), 0)}`}
                                   </p>
                                 </div>
                                 <span className="font-mono text-xs font-bold text-ink" dir="ltr">

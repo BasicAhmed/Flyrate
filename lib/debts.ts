@@ -33,6 +33,7 @@ export function addDebtEntry(input: {
   amount: number;
   date: string;
   note?: string;
+  affectsCapital?: boolean;
 }) {
   return call("POST", { action: "add", ...input });
 }
