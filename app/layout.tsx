@@ -1,6 +1,15 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Providers from "./providers";
 import "./globals.css";
+
+/** maximumScale 1 stops iPhone Safari from zooming in whenever a text box
+ *  is tapped (it does that for inputs under 16px). Pinch-zoom still works
+ *  on iPhone. */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
 
 export const metadata: Metadata = {
   title: "FlyRate Exchange — تحويل أموال أسرع وأفضل سعر للطلاب",
