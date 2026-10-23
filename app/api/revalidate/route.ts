@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { getAdminAuth } from "@/lib/firebaseAdmin";
+import { verifyAdminToken } from "@/lib/verifyAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   try {
-    await getAdminAuth().verifyIdToken(token);
+    await verifyAdminToken(token);
   } catch {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

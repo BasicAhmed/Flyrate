@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { applyDebtAction, type DebtAccount, type DebtAction } from "@/lib/debtsCore";
 import type { CapitalSettings } from "@/lib/capital";
+import { requireAdmin } from "@/lib/verifyAdmin";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,29 +13,19 @@ export const runtime = "nodejs";
 const DEBTS = "sales/__debts";
 const CAPITAL = "settings/capital";
 
-async function admin() {
-  // Imported lazily so a missing/invalid service account becomes a readable
-  // error instead of crashing the whole route.
-  const mod = await import("@/lib/firebaseAdmin");
-  return { db: mod.getAdminDb(), auth: mod.getAdminAuth() };
-}
-
 function fail(err: unknown, status = 500) {
   const msg = err instanceof Error ? err.message : String(err);
   return NextResponse.json({ error: msg, server: true }, { status });
 }
 
 async function check(request: Request) {
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (!token) throw Object.assign(new Error("unauthorized"), { status: 401 });
-  const { db, auth } = await admin();
   try {
-    await auth.verifyIdToken(token);
+    await requireAdmin(request);
   } catch {
     throw Object.assign(new Error("unauthorized"), { status: 401 });
   }
-  return db;
+  const { getAdminDb } = await import("@/lib/firebaseAdmin");
+  return getAdminDb();
 }
 
 function readCap(d: Record<string, unknown> | undefined): CapitalSettings | null {
