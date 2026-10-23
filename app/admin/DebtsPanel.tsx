@@ -36,7 +36,15 @@ function effectHint(kind: DebtKind, type: DebtEntryType) {
   return capitalEffect(kind, type, 1) > 0 ? "بيتضاف لرأس المال" : "بيتخصم من رأس المال";
 }
 
-export default function DebtsPanel({ today, onError }: { today: string; onError: (msg: string) => void }) {
+export default function DebtsPanel({
+  today,
+  authReady,
+  onError,
+}: {
+  today: string;
+  authReady: boolean;
+  onError: (msg: string) => void;
+}) {
   const [cached] = useState(() => cacheGet<DebtAccount[]>("debts"));
   const [accounts, setAccounts] = useState<DebtAccount[]>(cached ?? []);
   const [loaded, setLoaded] = useState(!!cached);
@@ -55,6 +63,7 @@ export default function DebtsPanel({ today, onError }: { today: string; onError:
   const [note, setNote] = useState("");
 
   useEffect(() => {
+    if (!authReady) return;
     getDebts()
       .then((a) => {
         setAccounts(a);
@@ -65,7 +74,7 @@ export default function DebtsPanel({ today, onError }: { today: string; onError:
         setLoaded(true);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authReady]);
   useEffect(() => {
     if (loaded) cacheSet("debts", accounts);
   }, [loaded, accounts]);

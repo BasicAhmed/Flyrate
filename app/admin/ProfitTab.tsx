@@ -468,7 +468,7 @@ export default function ProfitTab({
 
       {view === "capital" && <CapitalCard sales={sales} today={today} onError={onError} />}
 
-      {view === "debts" && <DebtsPanel today={today} onError={onError} />}
+      {view === "debts" && <DebtsPanel today={today} authReady={authReady} onError={onError} />}
 
       {view === "reports" && (
         <>

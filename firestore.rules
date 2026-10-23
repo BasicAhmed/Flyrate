@@ -9,8 +9,10 @@ service cloud.firestore {
       allow read: if true;
       allow write: if request.auth != null;
     }
+    // Public site settings (margin, flows, etc.) stay readable by everyone;
+    // the capital doc is private to the signed-in admin.
     match /settings/{doc} {
-      allow read: if true;
+      allow read: if doc != "capital" || request.auth != null;
       allow write: if request.auth != null;
     }
     match /sales/{doc} {

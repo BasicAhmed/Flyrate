@@ -387,7 +387,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
 
         {saveError && (
           <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-500">
-            فشل الحفظ: {saveError} — تأكد من نشر قواعد Firestore.
+            فشل الحفظ: {saveError}
           </p>
         )}
 
