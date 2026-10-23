@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import {
-  ArrowLeftRight,
   BarChart3,
   ChevronDown,
   HandCoins,
@@ -143,6 +142,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
   const [savingAuto, setSavingAuto] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [pairFilter, setPairFilter] = useState<CurrencyCode | "all">("all");
+  const [openPair, setOpenPair] = useState<string | null>(null);
   const [manualMyr, setManualMyr] = useState<number | null>(null);
   const [myrInput, setMyrInput] = useState("");
   const [savingMyr, setSavingMyr] = useState(false);
@@ -377,42 +377,36 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
   }
 
   return (
-    <div className="min-h-screen pb-32">
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-bg/85 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-5 py-2.5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="shrink-0 rounded-xl border border-border bg-surface p-1.5 shadow-soft">
-              <Image src="/logo-icon.png" alt="" width={34} height={28} className="h-6 w-auto" />
-            </div>
-            <div className="min-w-0 leading-tight">
-              <p className="font-display text-sm font-bold text-ink" dir="ltr">
-                Fly<span className="text-primary">Rate</span>{" "}
-                <span className="text-[11px] font-medium text-subtle">Admin</span>
-              </p>
-              <p className="truncate text-[11px] text-subtle">
-                {new Date().toLocaleDateString("ar-EG", { weekday: "long", day: "numeric", month: "long" })}
-              </p>
-            </div>
+    <div className="admin-ui min-h-screen pb-32">
+      <header className="sticky top-0 z-30 bg-bg/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-5 pb-2 pt-3">
+          <div className="flex items-center gap-2">
+            <Image src="/logo-icon.png" alt="" width={28} height={28} className="h-7 w-7 rounded-lg bg-surface object-contain p-0.5" />
+            <span className="text-[15px] font-bold text-ink" dir="ltr">
+              Fly<span className="text-primary">Rate</span>
+            </span>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex items-center gap-2 [&>button]:border-0 [&>button]:bg-surface [&>button]:text-muted">
             <ThemeToggle />
             <button
               onClick={onSignOut}
               aria-label="تسجيل الخروج"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted transition-colors hover:border-red-500/60 hover:text-red-500"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-surface text-muted transition-colors hover:text-red-500"
             >
-              <LogOut size={15} />
+              <LogOut size={16} />
             </button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-3xl px-5 pt-5">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight text-ink">{SECTION[tab].title}</h1>
-            <p className="mt-0.5 text-xs text-muted">{SECTION[tab].hint}</p>
-          </div>
+      <div className="mx-auto max-w-3xl px-5">
+        <div className="px-1 pt-1">
+          <p className="text-[13px] font-medium text-subtle">
+            {tab === "add"
+              ? new Date().toLocaleDateString("ar-EG-u-nu-latn", { weekday: "long", day: "numeric", month: "long" })
+              : SECTION[tab].hint}
+          </p>
+          <h1 className="text-[30px] font-bold leading-tight tracking-tight text-ink">{SECTION[tab].title}</h1>
         </div>
 
         {saveError && (
@@ -436,40 +430,64 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
         )}
 
         {ratesLoaded && (
-          <div className={`mt-5 space-y-4 ${tab === "rates" ? "" : "hidden"}`}>
-            {/* Controls */}
-            <div className="card overflow-hidden p-0">
-              <div className="flex items-center justify-between gap-3 bg-gradient-to-br from-primary/15 via-transparent to-accent/10 p-5">
-                <div>
-                  <p className="text-xs text-muted">آخر تحديث للأسعار</p>
-                  <p className="mt-0.5 font-display text-lg font-bold text-ink">
+          <div className={`mt-4 space-y-4 ${tab === "rates" ? "" : "hidden"}`}>
+            {/* Status */}
+            <div className="card p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[12px] text-subtle">آخر تحديث</p>
+                  <p className="mt-0.5 text-[17px] font-bold text-ink">
                     {lastUpdated ? formatRelativeTime(lastUpdated) : "لم تُحدَّث بعد"}
                   </p>
+                  <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
+                    <span className={`size-1.5 rounded-full ${auto?.enabled ? "bg-emerald-500" : "bg-subtle"}`} />
+                    {auto ? (auto.enabled ? `تلقائي كل ${auto.minutes} د` : "التحديث التلقائي متوقف") : "…"} · Binance
+                  </p>
                 </div>
-                <button onClick={updateNow} disabled={fxUpdating} className="btn-primary px-5 py-3 text-sm">
+                <button onClick={updateNow} disabled={fxUpdating} className="btn-primary h-11 shrink-0 px-4 text-[13px]">
                   <RefreshCw size={15} className={fxUpdating ? "animate-spin" : ""} />
-                  {fxUpdating ? "جارٍ التحديث…" : "تحديث الآن"}
+                  {fxUpdating ? "جارٍ…" : "تحديث"}
                 </button>
               </div>
-              {fxMessage && <p className="border-t border-border/60 px-5 py-2.5 text-xs text-muted">{fxMessage}</p>}
+              {fxMessage && <p className="mt-3 rounded-xl bg-surface2 px-3 py-2 text-xs text-muted">{fxMessage}</p>}
+            </div>
 
-              <button
-                onClick={() => setShowSettings((v) => !v)}
-                className="flex w-full items-center justify-between border-t border-border/60 px-5 py-3.5 text-sm font-semibold text-ink"
-              >
-                <span className="flex items-center gap-2">
-                  <Settings2 size={15} className="text-primary" /> إعدادات الأسعار
-                  <span className="text-[11px] font-normal text-subtle">
-                    هامش {margin}% · {auto ? (auto.enabled ? `تلقائي كل ${auto.minutes} د` : "التلقائي متوقف") : "…"}
-                    {manualMyr ? " · MYR يدوي" : ""}
-                  </span>
+            {/* Settings + flows */}
+            <div className="card group-list overflow-hidden p-0">
+              <button onClick={() => setShowSettings((v) => !v)} className="flex w-full items-center gap-3 px-4 py-3.5 text-right">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-primary/15 text-primary">
+                  <Settings2 size={16} />
                 </span>
-                <ChevronDown size={16} className={`text-subtle transition-transform ${showSettings ? "rotate-180" : ""}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-semibold text-ink">إعدادات الأسعار</p>
+                  <p className="truncate text-[11px] text-subtle">
+                    هامش {margin}%{manualMyr ? ` · MYR يدوي ${manualMyr}` : ""}
+                  </p>
+                </div>
+                <ChevronDown size={16} className={`shrink-0 text-subtle transition-transform ${showSettings ? "rotate-180" : ""}`} />
               </button>
-              {showSettings && (
-                <>
+              <div className="flex items-center gap-3 px-4 py-3.5">
+                <span
+                  className={`flex size-8 shrink-0 items-center justify-center rounded-[10px] ${
+                    disabled.length ? "bg-amber-500/15 text-amber-500" : "bg-emerald-500/15 text-emerald-500"
+                  }`}
+                >
+                  <Power size={16} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-semibold text-ink">الاتجاهات المتاحة</p>
+                  <p className="text-[11px] text-subtle">اقفل أي اتجاه ما عندك فيه سيولة من داخل الزوج</p>
+                </div>
+                <span className="font-mono text-[13px] font-bold text-ink" dir="ltr">
+                  {activeDirections}/{totalDirections}
+                </span>
+              </div>
+            </div>
+
+            {showSettings && (
+              <div className="card overflow-hidden p-0">
               {/* Auto refresh from Binance */}
-              <div className="border-t border-border/60 px-5 py-4">
+              <div className="px-5 py-4">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-semibold text-ink">التحديث التلقائي من Binance</p>
                   {auto?.enabled && auto.lastRunAt && (
@@ -594,45 +612,23 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                   </div>
                 )}
               </div>
-                </>
-              )}
-            </div>
-
-            {/* Active flows summary */}
-            <div className="card-sm flex items-center gap-3 p-4">
-              <span
-                className={`rounded-xl p-2 ${
-                  disabled.length ? "bg-amber-500/15 text-amber-500" : "bg-emerald-500/15 text-emerald-500"
-                }`}
-              >
-                <Power size={16} />
-              </span>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-ink">
-                  الاتجاهات المتاحة:{" "}
-                  <span className="font-mono" dir="ltr">
-                    {activeDirections}/{totalDirections}
-                  </span>
-                </p>
-                <p className="text-[11px] leading-relaxed text-muted">
-                  اقفل أي اتجاه ما عندك سيولة فيه — يفضل ظاهر في الحاسبة مع ملاحظة «غير متاح حالياً». التغيير يظهر في
-                  الموقع خلال دقيقة.
-                </p>
               </div>
-            </div>
+            )}
 
-            {/* Currency filter — only show the pairs you care about */}
-            <div className="-mx-5 overflow-x-auto px-5">
-              <div className="flex w-max gap-1.5" dir="ltr">
+            {/* Currency filter */}
+            <div className="no-scrollbar -mx-5 overflow-x-auto px-5" dir="ltr">
+              <div className="flex w-max gap-2">
                 {(["all", ...Array.from(new Set(PAIRS.flatMap((p) => [p.a, p.b])))] as (CurrencyCode | "all")[]).map((c) => (
                   <button
                     key={c}
                     onClick={() => setPairFilter(c)}
-                    className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      pairFilter === c ? "border-primary bg-primary text-white" : "border-border/70 bg-surface text-muted"
+                    className={`flex shrink-0 items-center gap-1 rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+                      pairFilter === c ? "bg-ink text-bg" : "bg-surface text-muted"
                     }`}
                   >
-                    {c === "all" ? "الكل" : (
+                    {c === "all" ? (
+                      "الكل"
+                    ) : (
                       <>
                         <span>{CURRENCIES[c].flag}</span>
                         <span className="font-mono">{c}</span>
@@ -643,8 +639,15 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
               </div>
             </div>
 
-            {/* Pair cards */}
-            <div className="grid gap-3 sm:grid-cols-2">
+            {/* Pairs — tap a row to edit */}
+            <div>
+              <div className="flex items-center justify-between px-1 pb-2">
+                <p className="text-[13px] font-semibold text-muted">الأزواج</p>
+                <p className="text-[12px] text-subtle">
+                  {PAIRS.filter(({ a, b }) => pairFilter === "all" || a === pairFilter || b === pairFilter).length}
+                </p>
+              </div>
+              <div className="card group-list overflow-hidden p-0">
               {PAIRS.filter(({ a, b }) => pairFilter === "all" || a === pairFilter || b === pairFilter).map(({ a, b }) => {
                 const row = rates.find((r) => r.from === a && r.to === b);
                 if (!row) return null;
@@ -657,40 +660,45 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                   const o = rowFor(x, y).marginOverride;
                   return marginInputs[flowKey(x, y)] ?? (o != null ? String(o) : "");
                 };
-                const hasCustomMargin = rowFor(a, b).marginOverride != null || rowFor(b, a).marginOverride != null;
                 const isSdg = a === "SDG" || b === "SDG";
-                const bothOff = disabled.includes(flowKey(a, b)) && disabled.includes(flowKey(b, a));
+                const offAB = disabled.includes(flowKey(a, b));
+                const offBA = disabled.includes(flowKey(b, a));
+                const mAB = rowFor(a, b).marginPercent;
+                const mBA = rowFor(b, a).marginPercent;
+                const isOpen = openPair === key;
+                const rateAB = formatSmart(computeRate(a, b, rowFor(a, b).marketPrice, mAB, rowFor(a, b)));
+                const rateBA = formatSmart(computeRate(b, a, rowFor(b, a).marketPrice, mBA, rowFor(b, a)));
 
                 return (
-                  <div key={key} className={`card-sm p-4 transition-opacity ${bothOff ? "opacity-70" : ""}`}>
-                    <div className="flex items-center justify-between" dir="ltr">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex -space-x-2">
-                          <span className="flex size-8 items-center justify-center rounded-full border-2 border-surface bg-surface2 text-base shadow-soft">
-                            {fromC.flag}
-                          </span>
-                          <span className="flex size-8 items-center justify-center rounded-full border-2 border-surface bg-surface2 text-base shadow-soft">
-                            {toC.flag}
-                          </span>
-                        </div>
-                        <span className="flex items-center gap-1.5 font-mono text-sm font-bold text-ink">
-                          {a} <ArrowLeftRight size={12} className="text-subtle" /> {b}
+                  <div key={key}>
+                    <button onClick={() => setOpenPair(isOpen ? null : key)} className="flex w-full items-center gap-3 px-4 py-3.5 text-right">
+                      <span className="flex shrink-0 -space-x-2" dir="ltr">
+                        <span className="flex size-9 items-center justify-center rounded-full border-2 border-surface bg-surface2 text-lg">
+                          {fromC.flag}
                         </span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {hasCustomMargin && (
-                          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">
-                            هامش خاص
-                          </span>
-                        )}
-                        <span className="text-[11px] text-subtle">
-                          {row.updatedAt ? formatRelativeTime(row.updatedAt) : "—"}
+                        <span className="flex size-9 items-center justify-center rounded-full border-2 border-surface bg-surface2 text-lg">
+                          {toC.flag}
                         </span>
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono text-[15px] font-bold text-ink" dir="ltr" style={{ textAlign: "right" }}>
+                          {a} ⇄ {b}
+                        </p>
+                        <p className="text-[11px] text-subtle">
+                          هامش {mAB === mBA ? `${mAB}%` : `${mAB}% / ${mBA}%`}
+                          {(offAB || offBA) && <span className="text-red-500"> · {offAB && offBA ? "متوقف" : "اتجاه متوقف"}</span>}
+                        </p>
                       </div>
-                    </div>
-
+                      <div className="shrink-0 text-left" dir="ltr">
+                        <p className={`font-mono text-[15px] font-bold ${offAB ? "text-subtle line-through" : "text-ink"}`}>{rateAB}</p>
+                        <p className={`font-mono text-[11px] ${offBA ? "text-subtle line-through" : "text-muted"}`}>{rateBA}</p>
+                      </div>
+                      <ChevronDown size={16} className={`shrink-0 text-subtle transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {isOpen && (
+                      <div className="space-y-2 px-4 pb-4">
                     {/* Each direction: rate + on/off */}
-                    <div className="mt-3 grid grid-cols-2 gap-2" dir="ltr">
+                    <div className="grid grid-cols-2 gap-2" dir="ltr">
                       {(
                         [
                           [a, b],
@@ -702,7 +710,7 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                         return (
                           <div
                             key={`${x}${y}`}
-                            className={`rounded-xl px-3 py-2.5 shadow-well transition-colors ${
+                            className={`rounded-2xl px-3 py-2.5 transition-colors ${
                               on ? "bg-surface2" : "bg-red-500/5 ring-1 ring-inset ring-red-500/25"
                             }`}
                           >
@@ -774,23 +782,23 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                         </label>
                       ))}
                     </div>
-                    <button onClick={() => savePair(a, b)} className="btn-primary mt-2 w-full py-2.5 text-xs">
+                    <button onClick={() => savePair(a, b)} className="btn-primary mt-3 h-11 w-full text-[13px]">
                       {saving === key ? "…" : "حفظ"}
                     </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Bottom navigation */}
-      <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-surface/95 backdrop-blur-xl"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <div className="mx-auto grid max-w-3xl grid-cols-5">
+      {/* Bottom navigation — floating */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 px-3" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}>
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1 rounded-[26px] border border-border/60 bg-surface/90 p-1.5 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           {NAV.map(({ id, label, icon: Icon }) => {
             const active = tab === id;
             return (
@@ -798,23 +806,12 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                 key={id}
                 onClick={() => setTab(id)}
                 aria-current={active ? "page" : undefined}
-                className="relative flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold"
+                className={`flex flex-col items-center gap-0.5 rounded-[20px] py-2 text-[10px] font-semibold transition-colors ${
+                  active ? "bg-primary text-white shadow-[0_6px_16px_-6px_rgba(254,82,0,0.8)]" : "text-muted"
+                }`}
               >
-                {active && (
-                  <motion.span
-                    layoutId="admin-nav"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                    className="absolute inset-x-3 top-0 h-[3px] rounded-b-full bg-primary"
-                  />
-                )}
-                <span
-                  className={`flex size-9 items-center justify-center rounded-xl transition-colors ${
-                    active ? "bg-primary/10 text-primary" : "text-subtle"
-                  }`}
-                >
-                  <Icon size={20} strokeWidth={active ? 2.4 : 2} />
-                </span>
-                <span className={active ? "text-primary" : "text-muted"}>{label}</span>
+                <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+                <span>{label}</span>
               </button>
             );
           })}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CalendarDays, Pencil, Plus, RefreshCw, Target, Trash2, X } from "lucide-react";
+import { CalendarDays, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { convertMid, type RateRow } from "@/lib/rates";
 import { getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, deleteSale, getSales, type SaleEntry } from "@/lib/sales";
@@ -194,61 +194,53 @@ export default function ProfitTab({
   }
 
   return (
-    <div className="mt-5 space-y-4">
+    <div className="mt-4 space-y-4">
       {/* Summary — on the sale and reports screens */}
       {(view === "add" || view === "reports") && (
-      <div className="card relative overflow-hidden p-4">
-        <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-primary/15 via-primary/5 to-accent/10" />
-        <div className="relative">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-[11px] font-medium text-muted">ربح اليوم</p>
-              <p className="mt-0.5 font-mono text-2xl font-extrabold text-ink" dir="ltr">
-                {usd(stats.today.profit)}
-              </p>
-              <p className="text-[10px] text-subtle">
-                {stats.today.count} عملية · <span dir="ltr">{usd(stats.today.usd, 0)}</span>
-              </p>
+        <div className="relative overflow-hidden rounded-[26px] bg-brand-gradient p-5 text-white shadow-[0_20px_40px_-20px_rgba(254,82,0,0.8)]">
+          <div aria-hidden="true" className="pointer-events-none absolute -left-12 -top-16 size-48 rounded-full bg-white/10" />
+          <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-20 size-44 rounded-full bg-white/10" />
+          <div className="relative">
+            <div className="flex items-center justify-between">
+              <p className="text-[13px] font-medium text-white/80">ربح اليوم</p>
+              <span className="rounded-full bg-white/20 px-2.5 py-1 text-[11px] font-semibold">{stats.today.count} عملية</span>
             </div>
-            <div className="border-r border-border/60 pr-3">
-              <p className="text-[11px] font-medium text-muted">ربح الشهر</p>
-              <p className="mt-0.5 font-mono text-2xl font-extrabold text-ink" dir="ltr">
-                {usd(stats.month.profit)}
-              </p>
-              <p className="text-[10px] text-subtle">
-                {stats.month.count} عملية · <span dir="ltr">{usd(stats.month.usd, 0)}</span>
-              </p>
-            </div>
-          </div>
+            <p className="mt-1 font-mono text-[42px] font-bold leading-none tracking-tight" dir="ltr" style={{ textAlign: "right" }}>
+              {usd(stats.today.profit)}
+            </p>
+            <p className="mt-2 text-[12px] text-white/75">
+              مبيعات اليوم <span className="font-mono" dir="ltr">{usd(stats.today.usd, 0)}</span>
+            </p>
 
-          {/* Daily target, inline */}
-          <div className="mt-3 border-t border-border/60 pt-3">
-            <div className="flex items-center justify-between gap-2 text-[11px]">
-              <span className="flex items-center gap-1 font-medium text-muted">
-                <Target size={12} className="text-primary" /> الهدف اليومي
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="font-mono text-subtle" dir="ltr">
+            <div className="mt-4 grid grid-cols-2 gap-4 border-t border-white/20 pt-3.5">
+              <div>
+                <p className="text-[11px] text-white/70">ربح الشهر</p>
+                <p className="mt-0.5 font-mono text-lg font-bold" dir="ltr" style={{ textAlign: "right" }}>
+                  {usd(stats.month.profit)}
+                </p>
+                <p className="text-[10px] text-white/65">{stats.month.count} عملية</p>
+              </div>
+              <button onClick={() => setEditingTarget((v) => !v)} className="text-right" aria-label="تعديل الهدف اليومي">
+                <span className="flex items-center justify-between text-[11px] text-white/70">
+                  <span className="flex items-center gap-1">
+                    الهدف اليومي {editingTarget ? <X size={11} /> : <Pencil size={11} />}
+                  </span>
+                  <span className="font-mono font-bold text-white">{targetProgress.toFixed(0)}%</span>
+                </span>
+                <span className="mt-2 block h-2 overflow-hidden rounded-full bg-white/25">
+                  <motion.span
+                    initial={{ width: 0 }}
+                    animate={{ width: `${targetProgress}%` }}
+                    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                    className="block h-full rounded-full bg-white"
+                  />
+                </span>
+                <span className="mt-1 block font-mono text-[10px] text-white/70" dir="ltr" style={{ textAlign: "right" }}>
                   {usd(stats.today.usd, 0)} / {usd(dailyTarget, 0)}
                 </span>
-                <span className="font-mono font-bold text-primary">{targetProgress.toFixed(0)}%</span>
-                <button
-                  onClick={() => setEditingTarget((v) => !v)}
-                  aria-label={editingTarget ? "إلغاء" : "تعديل الهدف"}
-                  className="rounded-md p-1 text-subtle hover:text-ink"
-                >
-                  {editingTarget ? <X size={12} /> : <Pencil size={12} />}
-                </button>
-              </span>
+              </button>
             </div>
-            <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-surface2 shadow-well">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${targetProgress}%` }}
-                transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                className="h-full rounded-full bg-brand-gradient"
-              />
-            </div>
+
             <AnimatePresence initial={false}>
               {editingTarget && (
                 <motion.div
@@ -257,9 +249,9 @@ export default function ProfitTab({
                   exit={{ height: 0, opacity: 0 }}
                   className="overflow-hidden"
                 >
-                  <div className="mt-2 flex gap-2" dir="ltr">
+                  <div className="mt-3 flex gap-2" dir="ltr">
                     <div className="relative flex-1">
-                      <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-subtle">$</span>
+                      <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-white/70">$</span>
                       <input
                         type="number"
                         step="any"
@@ -268,10 +260,14 @@ export default function ProfitTab({
                         onChange={(e) => setTargetInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && saveTarget()}
                         aria-label="الهدف اليومي"
-                        className="field py-2 pl-7 pr-3 font-mono text-sm"
+                        className="w-full rounded-xl bg-white/20 py-2.5 pl-7 pr-3 font-mono text-sm text-white outline-none placeholder:text-white/60"
                       />
                     </div>
-                    <button onClick={saveTarget} disabled={savingTarget} className="btn-primary shrink-0 px-4 py-2 text-xs">
+                    <button
+                      onClick={saveTarget}
+                      disabled={savingTarget}
+                      className="shrink-0 rounded-xl bg-white px-4 text-xs font-bold text-primary disabled:opacity-60"
+                    >
                       {savingTarget ? "…" : "حفظ"}
                     </button>
                   </div>
@@ -280,16 +276,15 @@ export default function ProfitTab({
             </AnimatePresence>
           </div>
         </div>
-      </div>
       )}
 
       {view === "add" && (
         <>
           {/* Add sale */}
-          <div className="card p-5">
+          <div className="card p-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-bold text-ink">تسجيل عملية بيع</p>
-              <label className="flex items-center gap-1.5 rounded-full border border-border bg-surface2 px-3 py-1.5 text-xs text-muted shadow-well">
+              <p className="text-[15px] font-bold text-ink">عملية جديدة</p>
+              <label className="flex items-center gap-1.5 rounded-full bg-surface2 px-3 py-1.5 text-xs text-muted">
                 <CalendarDays size={13} />
                 <input
                   type="date"
@@ -301,144 +296,145 @@ export default function ProfitTab({
               </label>
             </div>
 
-            <p className="mt-4 text-[11px] font-medium text-subtle">العملة اللي بعتها</p>
-            <div className="mt-1.5 grid grid-cols-5 gap-1.5 sm:grid-cols-10" dir="ltr">
-              {CURRENCY_ORDER.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => {
-                    setCurrency(c);
-                    setMarginInput(null);
-                  }}
-                  className={`flex flex-col items-center gap-0.5 rounded-xl border py-1.5 text-[11px] font-bold transition-all ${
-                    currency === c
-                      ? "border-primary bg-primary/10 text-primary shadow-soft"
-                      : "border-border/70 bg-surface text-muted shadow-soft hover:border-primary/50"
-                  }`}
-                >
-                  <span className="text-lg leading-none">{CURRENCIES[c].flag}</span>
-                  <span className="font-mono">{c}</span>
-                </button>
-              ))}
+            {/* Currency */}
+            <div className="no-scrollbar -mx-4 mt-3 overflow-x-auto px-4" dir="ltr">
+              <div className="flex w-max gap-2">
+                {CURRENCY_ORDER.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => {
+                      setCurrency(c);
+                      setMarginInput(null);
+                    }}
+                    className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+                      currency === c ? "bg-ink text-bg" : "bg-surface2 text-muted"
+                    }`}
+                  >
+                    <span>{CURRENCIES[c].flag}</span>
+                    <span className="font-mono">{c}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-[1fr_7rem] gap-2.5" dir="ltr">
-              <label className="text-[11px] font-medium text-subtle">
-                <span className="block text-right">المبلغ</span>
-                <div className="relative mt-1">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={amount}
-                    onChange={(e) => {
-                      const clean = e.target.value.replace(/[^0-9.]/g, "");
-                      if (!clean) return setAmount("");
-                      const [i, ...d] = clean.split(".");
-                      const intFmt = Number(i || "0").toLocaleString("en-US");
-                      setAmount(d.length ? `${intFmt}.${d.join("").slice(0, 2)}` : intFmt);
-                    }}
-                    onKeyDown={(e) => e.key === "Enter" && submit()}
-                    placeholder="10,000"
-                    className="field py-3 pl-3.5 pr-16 font-mono text-lg font-bold"
-                  />
-                  <span className="pointer-events-none absolute inset-y-0 right-3.5 flex items-center font-mono text-sm font-semibold text-subtle">
-                    {currency}
-                  </span>
-                </div>
-              </label>
-              <label className="text-[11px] font-medium text-subtle">
-                <span className="block text-right">
+            {/* Amount */}
+            <label className="mt-3 block rounded-2xl bg-surface2 px-4 py-3">
+              <span className="block text-[11px] font-medium text-subtle">المبلغ</span>
+              <span className="mt-0.5 flex items-baseline gap-2" dir="ltr">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/[^0-9.]/g, "");
+                    if (!clean) return setAmount("");
+                    const [i, ...d] = clean.split(".");
+                    const intFmt = Number(i || "0").toLocaleString("en-US");
+                    setAmount(d.length ? `${intFmt}.${d.join("").slice(0, 2)}` : intFmt);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && submit()}
+                  placeholder="0"
+                  className="w-full min-w-0 bg-transparent font-mono text-[32px] font-bold text-ink outline-none placeholder:text-subtle/60"
+                />
+                <span className="shrink-0 font-mono text-sm font-semibold text-subtle">{currency}</span>
+              </span>
+            </label>
+
+            {/* Margin + preview */}
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <label className="rounded-2xl bg-surface2 px-3 py-2.5">
+                <span className="block text-[10px] text-subtle">
                   الهامش {marginInput === null && <span className="text-accent">· تلقائي</span>}
                 </span>
-                <div className="relative mt-1">
+                <span className="mt-0.5 flex items-baseline gap-0.5" dir="ltr">
                   <input
                     type="number"
                     step="any"
                     inputMode="decimal"
                     value={marginInput ?? String(autoMargin)}
                     onChange={(e) => setMarginInput(e.target.value)}
-                    className="field py-3 pl-3 pr-7 font-mono text-lg font-bold"
+                    aria-label="الهامش"
+                    className="w-full min-w-0 bg-transparent text-right font-mono text-[15px] font-bold text-ink outline-none"
                   />
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-subtle">%</span>
-                </div>
+                  <span className="text-[12px] text-subtle">%</span>
+                </span>
               </label>
-            </div>
-
-            {/* Live preview */}
-            <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 to-accent/5 p-3.5 shadow-well">
-              <div>
-                <p className="text-[11px] text-muted">القيمة بالدولار</p>
-                <p className="mt-0.5 font-mono text-lg font-bold text-ink" dir="ltr">
-                  {previewUsd !== null ? `≈ ${usd(previewUsd)}` : "—"}
+              <div className="rounded-2xl bg-surface2 px-3 py-2.5">
+                <p className="text-[10px] text-subtle">بالدولار</p>
+                <p className="mt-0.5 truncate font-mono text-[15px] font-bold text-ink" dir="ltr" style={{ textAlign: "right" }}>
+                  {previewUsd !== null ? usd(previewUsd, previewUsd >= 1000 ? 0 : 2) : "—"}
                 </p>
               </div>
-              <div>
-                <p className="text-[11px] text-muted">ربحك من العملية</p>
-                <p className="mt-0.5 font-mono text-lg font-bold text-emerald-500" dir="ltr">
-                  {previewProfit !== null ? `+ ${usd(previewProfit)}` : "—"}
+              <div className="rounded-2xl bg-emerald-500/10 px-3 py-2.5">
+                <p className="text-[10px] text-subtle">ربحك</p>
+                <p className="mt-0.5 truncate font-mono text-[15px] font-bold text-emerald-500" dir="ltr" style={{ textAlign: "right" }}>
+                  {previewProfit !== null ? `+${usd(previewProfit)}` : "—"}
                 </p>
               </div>
             </div>
             {amountNum > 0 && previewUsd === null && (
-              <p className="mt-2 text-xs text-red-500">ما في سعر محفوظ لتحويل {currency} للدولار — اضغط «تحديث الآن» في الأسعار.</p>
+              <p className="mt-2 text-xs text-red-500">ما في سعر محفوظ لتحويل {currency} للدولار — اضغط «تحديث» في الأسعار.</p>
             )}
 
             <button
               onClick={submit}
               disabled={saving || amountNum <= 0 || previewUsd === null}
-              className="btn-primary mt-3 w-full py-3.5 text-sm"
+              className="btn-primary mt-3 h-[52px] w-full text-[15px]"
             >
-              <Plus size={16} /> {saving ? "جارٍ الحفظ…" : "إضافة العملية"}
+              <Plus size={18} /> {saving ? "جارٍ الحفظ…" : "إضافة العملية"}
             </button>
-
-            {/* Entries for the chosen day */}
-            <div className="mt-5 border-t border-border/60 pt-4">
-              <p className="text-xs font-semibold text-muted">
-                عمليات {date === today ? "اليوم" : <span dir="ltr">{date}</span>}{" "}
-                <span className="text-subtle">({dayEntries.length})</span>
-              </p>
-              {dayEntries.length === 0 ? (
-                <p className="py-5 text-center text-xs text-subtle">ما في عمليات مسجلة في هذا اليوم.</p>
-              ) : (
-                <ul className="mt-2 space-y-1.5">
-                  <AnimatePresence initial={false}>
-                    {dayEntries.map((s) => (
-                      <motion.li
-                        key={s.id}
-                        layout
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        className="flex items-center gap-3 rounded-xl bg-surface2 px-3 py-2.5 shadow-well"
-                      >
-                        <span className="text-lg">{flagFor(s.currency)}</span>
-                        <div className="min-w-0 flex-1" dir="ltr">
-                          <p className="truncate text-right font-mono text-sm font-bold text-ink">
-                            {num(s.amount)} {s.currency}
-                          </p>
-                          <p className="text-right font-mono text-[11px] text-subtle">
-                            ≈ {usd(s.usd)} · {s.margin}%
-                          </p>
-                        </div>
-                        <span className="font-mono text-sm font-bold text-emerald-500" dir="ltr">
-                          +{usd(s.profit)}
-                        </span>
-                        <button
-                          onClick={() => remove(s)}
-                          disabled={deleting === s.id}
-                          aria-label="حذف العملية"
-                          className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-red-500/10 hover:text-red-500 disabled:opacity-40"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </motion.li>
-                    ))}
-                  </AnimatePresence>
-                </ul>
-              )}
-            </div>
           </div>
 
+          {/* Entries for the chosen day */}
+          <div>
+            <div className="flex items-center justify-between px-1 pb-2">
+              <p className="text-[13px] font-semibold text-muted">
+                عمليات {date === today ? "اليوم" : <span dir="ltr">{date}</span>}
+              </p>
+              <p className="text-[12px] text-subtle">{dayEntries.length}</p>
+            </div>
+            {dayEntries.length === 0 ? (
+              <div className="card py-8 text-center text-xs text-subtle">ما في عمليات مسجلة في هذا اليوم.</div>
+            ) : (
+              <ul className="card group-list overflow-hidden p-0">
+                <AnimatePresence initial={false}>
+                  {dayEntries.map((s) => (
+                    <motion.li
+                      key={s.id}
+                      layout
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      className="flex items-center gap-3 px-4 py-3"
+                    >
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface2 text-xl">
+                        {flagFor(s.currency)}
+                      </span>
+                      <div className="min-w-0 flex-1" dir="ltr">
+                        <p className="truncate text-right font-mono text-[15px] font-bold text-ink">
+                          {num(s.amount)} {s.currency}
+                        </p>
+                        <p className="text-right font-mono text-[11px] text-subtle">
+                          ≈ {usd(s.usd)} · {s.margin}%
+                        </p>
+                      </div>
+                      <span className="font-mono text-[15px] font-bold text-emerald-500" dir="ltr">
+                        +{usd(s.profit)}
+                      </span>
+                      <button
+                        onClick={() => remove(s)}
+                        disabled={deleting === s.id}
+                        aria-label="حذف العملية"
+                        className="rounded-lg p-1.5 text-subtle transition-colors hover:bg-red-500/10 hover:text-red-500 disabled:opacity-40"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
+              </ul>
+            )}
+          </div>
         </>
       )}
 

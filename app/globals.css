@@ -115,3 +115,62 @@ input[type="number"] {
 .light .text-red-500 { color: rgb(220 38 38); }
 .light .text-amber-500 { color: rgb(217 119 6); }
 .light .text-amber-600 { color: rgb(180 83 9); }
+
+/* ===================== Admin v2 look ===================== */
+/* Scoped to the admin dashboard. Calmer, app-like surfaces: grouped
+ * background, borderless rounded cards, soft fields, squarer buttons. */
+.admin-ui {
+  --color-bg: 8 8 10;
+  --color-surface: 22 22 25;
+  --color-surface2: 33 33 37;
+  --color-border: 46 46 51;
+  --color-muted: 160 160 166;
+  --color-subtle: 112 112 118;
+  background: rgb(var(--color-bg));
+}
+.light .admin-ui {
+  --color-bg: 242 242 246;
+  --color-surface: 255 255 255;
+  --color-surface2: 242 242 246;
+  --color-border: 228 228 233;
+  --color-ink: 17 17 20;
+  --color-muted: 92 92 99;
+  --color-subtle: 142 142 148;
+}
+.admin-ui .card,
+.admin-ui .card-sm,
+.admin-ui .card-raised {
+  border-color: transparent;
+  border-radius: 22px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.035) inset;
+}
+.light .admin-ui .card,
+.light .admin-ui .card-sm,
+.light .admin-ui .card-raised {
+  box-shadow: 0 1px 2px rgb(16 16 24 / 0.04), 0 10px 28px -16px rgb(16 16 24 / 0.16);
+}
+.admin-ui .card-sm { border-radius: 18px; }
+.admin-ui .field {
+  border-color: transparent;
+  border-radius: 14px;
+  box-shadow: none;
+  background: rgb(var(--color-surface2));
+}
+.admin-ui .field:focus { border-color: rgb(var(--color-primary)); }
+.admin-ui .btn-primary {
+  border-radius: 14px;
+  color: #fff;
+  background-image: linear-gradient(180deg, #ff6a1f, #fe5200);
+  box-shadow: 0 8px 20px -10px rgb(254 82 0 / 0.75);
+}
+.admin-ui .btn-ghost {
+  border-radius: 14px;
+  border-color: transparent;
+  background: rgb(var(--color-surface2));
+  box-shadow: none;
+}
+.admin-ui .shadow-well { box-shadow: none; }
+/* Grouped list rows (iOS settings style) */
+.admin-ui .group-list > * + * { border-top: 1px solid rgb(var(--color-border) / 0.6); }
+.admin-ui .no-scrollbar::-webkit-scrollbar { display: none; }
+.admin-ui .no-scrollbar { scrollbar-width: none; }
