@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CalendarDays, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
-import { convertMid, type RateRow } from "@/lib/rates";
+import { ArrowLeftRight, CalendarDays, ChevronDown, Pencil, Plus, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
+import { convertBetween, convertMid, type RateRow } from "@/lib/rates";
 import { getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, deleteSale, getSales, type SaleEntry } from "@/lib/sales";
-import { CURRENCIES, type CurrencyCode } from "@/lib/corridors";
+import { CURRENCIES, FROM_CURRENCIES, isMultiplyCorridor, validToCurrencies, type CurrencyCode } from "@/lib/corridors";
+import { formatSmart } from "@/lib/format";
 import { cacheGet, cacheSet } from "@/lib/localCache";
 import CapitalCard from "./CapitalCard";
 import HistoryPanel from "./HistoryPanel";
@@ -21,8 +22,15 @@ function todayStr() {
 const usd = (n: number, digits = 2) =>
   `$${n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 const num = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-
-const CURRENCY_ORDER: CurrencyCode[] = ["MYR", "SDG", "ZAR", "USDT", "USD", "EGP", "SAR", "AED", "QAR", "KES"];
+const parseNum = (s: string) => parseFloat(s.replace(/,/g, "")) || 0;
+/** "1234.5" → "1,234.5" while typing (max 2 decimals). */
+const fmtTyping = (raw: string) => {
+  const clean = raw.replace(/[^0-9.]/g, "");
+  if (!clean) return "";
+  const [i, ...d] = clean.split(".");
+  const intFmt = Number(i || "0").toLocaleString("en-US");
+  return d.length ? `${intFmt}.${d.join("").slice(0, 2)}` : intFmt;
+};
 
 function flagFor(c: SaleEntry["currency"]) {
   return CURRENCIES[c as CurrencyCode]?.flag ?? "$";
@@ -33,16 +41,6 @@ function flagFor(c: SaleEntry["currency"]) {
 function toUsd(amount: number, currency: SaleEntry["currency"], rates: RateRow[]): number | null {
   if (currency === "USD" || currency === "USDT") return amount;
   return convertMid(amount, currency, "USDT", rates);
-}
-
-/** Margin to prefill for a currency: the margin of its flows (both
- *  directions of every pair touching it) if they all agree, otherwise the
- *  global default. */
-function suggestedMargin(currency: CurrencyCode, rates: RateRow[], defaultMargin: number) {
-  const margins = new Set(
-    rates.filter((r) => r.from === currency || r.to === currency).map((r) => r.marginPercent)
-  );
-  return margins.size === 1 ? [...margins][0] : defaultMargin;
 }
 
 export type View = "add" | "capital" | "debts" | "reports";
@@ -70,9 +68,11 @@ export default function ProfitTab({
 
   // Form
   const [date, setDate] = useState(todayStr());
-  const [currency, setCurrency] = useState<CurrencyCode>("MYR");
-  const [amount, setAmount] = useState("");
-  const [marginInput, setMarginInput] = useState<string | null>(null); // null = use suggested
+  // Flow sale: customer gives `fromC`, gets `toC`. Last flow is remembered.
+  const [fromC, setFromC] = useState<CurrencyCode>(() => cacheGet<{ f: CurrencyCode }>("saleFlow")?.f ?? "SDG");
+  const [toC, setToC] = useState<CurrencyCode>(() => cacheGet<{ t: CurrencyCode }>("saleFlow")?.t ?? "ZAR");
+  const [amount, setAmount] = useState(""); // received, in fromC
+  const [paidInput, setPaidInput] = useState<string | null>(null); // null = pay the suggested amount
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -97,11 +97,40 @@ export default function ProfitTab({
     if (loaded) cacheSet("profit", { sales, target: dailyTarget });
   }, [loaded, sales, dailyTarget]);
 
-  const autoMargin = suggestedMargin(currency, rates, defaultMargin);
-  const margin = marginInput === null || marginInput.trim() === "" ? autoMargin : parseFloat(marginInput) || 0;
-  const amountNum = parseFloat(amount.replace(/,/g, "")) || 0;
-  const previewUsd = amountNum > 0 ? toUsd(amountNum, currency, rates) : null;
-  const previewProfit = previewUsd !== null ? previewUsd * (margin / 100) : null;
+  // ----- flow sale math -----
+  const toOptions = validToCurrencies(fromC);
+  const flowTo: CurrencyCode = toOptions.some((c) => c.code === toC) ? toC : (toOptions[0]?.code ?? toC);
+  const flowRow = rates.find((r) => r.from === fromC && r.to === flowTo);
+  const amountNum = parseNum(amount);
+  // What the live customer rate says he should receive
+  const suggested = amountNum > 0 ? convertBetween(amountNum, fromC, flowTo, rates) : null;
+  const paidNum = paidInput === null ? suggested : parseNum(paidInput);
+  const paidEdited = paidInput !== null && suggested !== null && Math.abs((paidNum ?? 0) - suggested) > 0.004;
+  // Profit = value of what came in − value of what went out, both at market (no margin)
+  const previewUsd = amountNum > 0 ? toUsd(amountNum, fromC, rates) : null;
+  const outUsd = paidNum && paidNum > 0 ? toUsd(paidNum, flowTo, rates) : null;
+  const previewProfit = previewUsd !== null && outUsd !== null ? previewUsd - outUsd : null;
+  const effMargin = previewProfit !== null && previewUsd ? (previewProfit / previewUsd) * 100 : null;
+  const liveMargin = flowRow?.marginPercent ?? defaultMargin;
+  const rateLine = (r: number) =>
+    isMultiplyCorridor(fromC, flowTo) ? `1 ${fromC} = ${formatSmart(r)} ${flowTo}` : `1 ${flowTo} = ${formatSmart(r)} ${fromC}`;
+  const effRate =
+    amountNum > 0 && paidNum && paidNum > 0
+      ? isMultiplyCorridor(fromC, flowTo)
+        ? paidNum / amountNum
+        : amountNum / paidNum
+      : null;
+  const diffPaid = paidEdited && suggested !== null && paidNum !== null ? paidNum - suggested : 0;
+  const diffUsd = paidEdited && suggested !== null ? (toUsd(Math.abs(diffPaid), flowTo, rates) ?? 0) : 0;
+
+  function pickFlow(f: CurrencyCode, t?: CurrencyCode) {
+    const opts = validToCurrencies(f);
+    const nextTo = t && opts.some((c) => c.code === t) ? t : (opts[0]?.code ?? f);
+    setFromC(f);
+    setToC(nextTo);
+    setPaidInput(null);
+    cacheSet("saleFlow", { f, t: nextTo });
+  }
 
   const today = todayStr();
   const month = today.slice(0, 7);
@@ -147,12 +176,25 @@ export default function ProfitTab({
   const targetProgress = dailyTarget > 0 ? Math.min(100, (stats.today.usd / dailyTarget) * 100) : 0;
 
   async function submit() {
-    if (amountNum <= 0 || previewUsd === null) return;
+    if (amountNum <= 0 || previewUsd === null || previewProfit === null || !paidNum) return;
+    if (previewProfit < 0 && !window.confirm(`العملية دي فيها خسارة ${usd(-previewProfit)}. تسجلها؟`)) return;
     setSaving(true);
     try {
-      const entry = await addSale({ date, currency, amount: amountNum, usd: previewUsd, margin });
+      const entry = await addSale({
+        date,
+        currency: fromC,
+        amount: amountNum,
+        usd: previewUsd,
+        margin: Math.round((effMargin ?? 0) * 100) / 100,
+        profit: previewProfit,
+        toCurrency: flowTo,
+        paid: paidNum,
+        ...(suggested !== null ? { suggested } : {}),
+        ...(effRate ? { rate: rateLine(effRate) } : {}),
+      });
       setSales((prev) => [entry, ...prev].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)));
       setAmount("");
+      setPaidInput(null);
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     }
@@ -296,89 +338,189 @@ export default function ProfitTab({
               </label>
             </div>
 
-            {/* Currency */}
-            <div className="no-scrollbar -mx-4 mt-3 overflow-x-auto px-4" dir="ltr">
-              <div className="flex w-max gap-2">
-                {CURRENCY_ORDER.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => {
-                      setCurrency(c);
-                      setMarginInput(null);
-                    }}
-                    className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-                      currency === c ? "bg-ink text-bg" : "bg-surface2 text-muted"
-                    }`}
+            {/* Flow: من → إلى */}
+            <div className="mt-3 flex items-center gap-2">
+              {(
+                [
+                  ["من", fromC, FROM_CURRENCIES, (c: CurrencyCode) => pickFlow(c, flowTo)],
+                  ["إلى", flowTo, toOptions, (c: CurrencyCode) => pickFlow(fromC, c)],
+                ] as const
+              ).map(([label, value, options, onPick], idx) => (
+                <div key={label} className={`relative flex-1 ${idx === 1 ? "order-3" : ""}`}>
+                  <div className="flex items-center gap-2 rounded-2xl bg-surface2 px-3 py-2.5">
+                    <span className="text-2xl leading-none">{CURRENCIES[value].flag}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[10px] text-subtle">{label}</span>
+                      <span className="block font-mono text-[15px] font-bold text-ink">{value}</span>
+                    </span>
+                    <ChevronDown size={14} className="text-subtle" />
+                  </div>
+                  <select
+                    value={value}
+                    onChange={(e) => onPick(e.target.value as CurrencyCode)}
+                    aria-label={label}
+                    className="absolute inset-0 cursor-pointer opacity-0"
                   >
-                    <span>{CURRENCIES[c].flag}</span>
-                    <span className="font-mono">{c}</span>
-                  </button>
-                ))}
-              </div>
+                    {options.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.code} — {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              <button
+                onClick={() => validToCurrencies(flowTo).some((c) => c.code === fromC) && pickFlow(flowTo, fromC)}
+                aria-label="عكس الاتجاه"
+                className="order-2 flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary"
+              >
+                <ArrowLeftRight size={16} />
+              </button>
             </div>
 
-            {/* Amount */}
+            {/* Live customer rate */}
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-xl px-1 text-[11px]">
+              <span className="flex items-center gap-1.5 text-muted">
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+                  <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                </span>
+                {flowRow ? (
+                  <span className="font-mono" dir="ltr">
+                    {rateLine(flowRow.rate)}
+                  </span>
+                ) : (
+                  "ما في سعر لهذا الاتجاه"
+                )}
+              </span>
+              <span className="rounded-full bg-surface2 px-2 py-0.5 font-semibold text-muted">هامش {liveMargin}%</span>
+            </div>
+
+            {/* Received */}
             <label className="mt-3 block rounded-2xl bg-surface2 px-4 py-3">
-              <span className="block text-[11px] font-medium text-subtle">المبلغ</span>
+              <span className="block text-[11px] font-medium text-subtle">استلمت من العميل</span>
               <span className="mt-0.5 flex items-baseline gap-2" dir="ltr">
                 <input
                   type="text"
                   inputMode="decimal"
                   value={amount}
                   onChange={(e) => {
-                    const clean = e.target.value.replace(/[^0-9.]/g, "");
-                    if (!clean) return setAmount("");
-                    const [i, ...d] = clean.split(".");
-                    const intFmt = Number(i || "0").toLocaleString("en-US");
-                    setAmount(d.length ? `${intFmt}.${d.join("").slice(0, 2)}` : intFmt);
+                    setAmount(fmtTyping(e.target.value));
+                    setPaidInput(null); // new amount → back to the suggested payout
                   }}
-                  onKeyDown={(e) => e.key === "Enter" && submit()}
                   placeholder="0"
-                  className="w-full min-w-0 bg-transparent font-mono text-[32px] font-bold text-ink outline-none placeholder:text-subtle/60"
+                  className="w-full min-w-0 bg-transparent font-mono text-[30px] font-bold text-ink outline-none placeholder:text-subtle/60"
                 />
-                <span className="shrink-0 font-mono text-sm font-semibold text-subtle">{currency}</span>
+                <span className="shrink-0 font-mono text-sm font-semibold text-subtle">{fromC}</span>
               </span>
             </label>
 
-            {/* Margin + preview */}
+            {/* Paid — pre-filled from the live rate, editable */}
+            <label
+              className={`mt-2 block rounded-2xl px-4 py-3 transition-colors ${
+                paidEdited ? "bg-amber-500/10 ring-1 ring-inset ring-amber-500/40" : "bg-primary/10"
+              }`}
+            >
+              <span className="flex items-center justify-between text-[11px] font-medium">
+                <span className={paidEdited ? "text-amber-600" : "text-primary"}>
+                  {paidEdited ? "دفعت فعلياً (معدّل)" : "حيستلم — حسب السعر المباشر"}
+                </span>
+                {paidEdited && suggested !== null && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setPaidInput(null);
+                    }}
+                    className="flex items-center gap-1 text-subtle"
+                  >
+                    <RotateCcw size={11} /> <span className="font-mono" dir="ltr">{num(suggested)}</span>
+                  </button>
+                )}
+              </span>
+              <span className="mt-0.5 flex items-baseline gap-2" dir="ltr">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={paidInput ?? (suggested !== null ? fmtTyping(suggested.toFixed(2)) : "")}
+                  onChange={(e) => setPaidInput(fmtTyping(e.target.value))}
+                  onKeyDown={(e) => e.key === "Enter" && submit()}
+                  placeholder="0"
+                  className="w-full min-w-0 bg-transparent font-mono text-[30px] font-bold text-ink outline-none placeholder:text-subtle/60"
+                />
+                <span className="shrink-0 font-mono text-sm font-semibold text-subtle">{flowTo}</span>
+              </span>
+            </label>
+
+            {/* Result */}
             <div className="mt-2 grid grid-cols-3 gap-2">
-              <label className="rounded-2xl bg-surface2 px-3 py-2.5">
-                <span className="block text-[10px] text-subtle">
-                  الهامش {marginInput === null && <span className="text-accent">· تلقائي</span>}
-                </span>
-                <span className="mt-0.5 flex items-baseline gap-0.5" dir="ltr">
-                  <input
-                    type="number"
-                    step="any"
-                    inputMode="decimal"
-                    value={marginInput ?? String(autoMargin)}
-                    onChange={(e) => setMarginInput(e.target.value)}
-                    aria-label="الهامش"
-                    className="w-full min-w-0 bg-transparent text-right font-mono text-[15px] font-bold text-ink outline-none"
-                  />
-                  <span className="text-[12px] text-subtle">%</span>
-                </span>
-              </label>
+              <div
+                className={`rounded-2xl px-3 py-2.5 ${
+                  previewProfit === null ? "bg-surface2" : previewProfit >= 0 ? "bg-emerald-500/10" : "bg-red-500/10"
+                }`}
+              >
+                <p className="text-[10px] text-subtle">ربحك</p>
+                <p
+                  className={`mt-0.5 truncate font-mono text-[15px] font-bold ${
+                    previewProfit === null ? "text-ink" : previewProfit >= 0 ? "text-emerald-500" : "text-red-500"
+                  }`}
+                  dir="ltr"
+                  style={{ textAlign: "right" }}
+                >
+                  {previewProfit === null ? "—" : `${previewProfit >= 0 ? "+" : "−"}${usd(Math.abs(previewProfit))}`}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-surface2 px-3 py-2.5">
+                <p className="text-[10px] text-subtle">الهامش الفعلي</p>
+                <p className="mt-0.5 truncate font-mono text-[15px] font-bold text-ink" dir="ltr" style={{ textAlign: "right" }}>
+                  {effMargin === null ? "—" : `${effMargin.toFixed(2)}%`}
+                </p>
+              </div>
               <div className="rounded-2xl bg-surface2 px-3 py-2.5">
                 <p className="text-[10px] text-subtle">بالدولار</p>
                 <p className="mt-0.5 truncate font-mono text-[15px] font-bold text-ink" dir="ltr" style={{ textAlign: "right" }}>
                   {previewUsd !== null ? usd(previewUsd, previewUsd >= 1000 ? 0 : 2) : "—"}
                 </p>
               </div>
-              <div className="rounded-2xl bg-emerald-500/10 px-3 py-2.5">
-                <p className="text-[10px] text-subtle">ربحك</p>
-                <p className="mt-0.5 truncate font-mono text-[15px] font-bold text-emerald-500" dir="ltr" style={{ textAlign: "right" }}>
-                  {previewProfit !== null ? `+${usd(previewProfit)}` : "—"}
-                </p>
-              </div>
             </div>
-            {amountNum > 0 && previewUsd === null && (
-              <p className="mt-2 text-xs text-red-500">ما في سعر محفوظ لتحويل {currency} للدولار — اضغط «تحديث» في الأسعار.</p>
+
+            {/* Smart hints */}
+            {effRate !== null && (
+              <p className="mt-2 px-1 text-[11px] text-subtle">
+                السعر الفعلي{" "}
+                <span className="font-mono text-muted" dir="ltr">
+                  {rateLine(effRate)}
+                </span>
+              </p>
+            )}
+            {paidEdited && diffPaid !== 0 && (
+              <p
+                className={`mt-1.5 rounded-xl px-3 py-2 text-[11px] ${
+                  diffPaid > 0 ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-500"
+                }`}
+              >
+                {diffPaid > 0 ? "دفعت زيادة" : "دفعت أقل"}{" "}
+                <span className="font-mono font-semibold" dir="ltr">
+                  {num(Math.abs(diffPaid))} {flowTo}
+                </span>{" "}
+                عن السعر المباشر — {diffPaid > 0 ? "ربحك قل" : "ربحك زاد"}{" "}
+                <span className="font-mono font-semibold" dir="ltr">
+                  {usd(diffUsd)}
+                </span>
+              </p>
+            )}
+            {previewProfit !== null && previewProfit < 0 && (
+              <p className="mt-1.5 rounded-xl bg-red-500/10 px-3 py-2 text-[11px] font-semibold text-red-500">
+                انتبه: العملية دي بخسارة
+              </p>
+            )}
+            {amountNum > 0 && (suggested === null || previewUsd === null) && (
+              <p className="mt-2 text-xs text-red-500">ما في سعر محفوظ للاتجاه ده — اضغط «تحديث» في الأسعار.</p>
             )}
 
             <button
               onClick={submit}
-              disabled={saving || amountNum <= 0 || previewUsd === null}
+              disabled={saving || amountNum <= 0 || previewProfit === null}
               className="btn-primary mt-3 h-[52px] w-full text-[15px]"
             >
               <Plus size={18} /> {saving ? "جارٍ الحفظ…" : "إضافة العملية"}
@@ -413,13 +555,20 @@ export default function ProfitTab({
                       <div className="min-w-0 flex-1" dir="ltr">
                         <p className="truncate text-right font-mono text-[15px] font-bold text-ink">
                           {num(s.amount)} {s.currency}
+                          {s.toCurrency && s.paid !== undefined && (
+                            <span className="text-[12px] font-semibold text-muted">
+                              {" "}
+                              → {num(s.paid)} {s.toCurrency}
+                            </span>
+                          )}
                         </p>
                         <p className="text-right font-mono text-[11px] text-subtle">
-                          ≈ {usd(s.usd)} · {s.margin}%
+                          ≈ {usd(s.usd)} · {Number(s.margin).toFixed(2)}%
                         </p>
                       </div>
-                      <span className="font-mono text-[15px] font-bold text-emerald-500" dir="ltr">
-                        +{usd(s.profit)}
+                      <span className={`font-mono text-[15px] font-bold ${s.profit >= 0 ? "text-emerald-500" : "text-red-500"}`} dir="ltr">
+                        {s.profit >= 0 ? "+" : "−"}
+                        {usd(Math.abs(s.profit))}
                       </span>
                       <button
                         onClick={() => remove(s)}

@@ -25,17 +25,24 @@ export interface SaleEntry {
   margin: number; // % used for the profit
   profit: number; // USD
   createdAt: string | null;
+  /** Flow sales (من → إلى): what was paid out and in which currency. */
+  toCurrency?: CurrencyCode;
+  paid?: number; // amount actually paid, in toCurrency
+  suggested?: number; // what the live rate said to pay
+  rate?: string; // customer rate shown at the time, e.g. "1 ZAR = 345.2 SDG"
 }
 
-export async function addSale(entry: Omit<SaleEntry, "id" | "createdAt" | "profit">): Promise<SaleEntry> {
+/** Pass `profit` when it's known exactly (flow sales: received − paid at
+ *  market value); otherwise it's usd × margin. Undefined fields are dropped
+ *  (Firestore rejects them). */
+export async function addSale(
+  entry: Omit<SaleEntry, "id" | "createdAt" | "profit"> & { profit?: number }
+): Promise<SaleEntry> {
   if (!firebaseEnabled || !db) throw new Error("Firebase is not configured — see .env.example.");
-  const profit = entry.usd * (entry.margin / 100);
-  const ref = await addDoc(collection(db, "sales"), {
-    ...entry,
-    profit,
-    createdAt: serverTimestamp(),
-  });
-  return { ...entry, id: ref.id, profit, createdAt: new Date().toISOString() };
+  const profit = typeof entry.profit === "number" ? entry.profit : entry.usd * (entry.margin / 100);
+  const data = Object.fromEntries(Object.entries({ ...entry, profit }).filter(([, v]) => v !== undefined));
+  const ref = await addDoc(collection(db, "sales"), { ...data, createdAt: serverTimestamp() });
+  return { ...(data as Omit<SaleEntry, "id" | "createdAt">), id: ref.id, createdAt: new Date().toISOString() };
 }
 
 export async function deleteSale(id: string): Promise<void> {
@@ -77,6 +84,10 @@ export async function getSales(max = 2000): Promise<SaleEntry[]> {
         margin: Number(x.margin ?? 0),
         profit: Number(x.profit ?? 0),
         createdAt,
+        ...(typeof x.toCurrency === "string" ? { toCurrency: x.toCurrency as CurrencyCode } : {}),
+        ...(typeof x.paid === "number" ? { paid: x.paid } : {}),
+        ...(typeof x.suggested === "number" ? { suggested: x.suggested } : {}),
+        ...(typeof x.rate === "string" ? { rate: x.rate } : {}),
       };
     });
   }

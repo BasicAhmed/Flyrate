@@ -172,6 +172,12 @@ export default function HistoryPanel({
                         <div className="min-w-0 flex-1" dir="ltr">
                           <p className="truncate text-right font-mono text-sm font-bold text-ink">
                             {num(it.sale.amount)} {it.sale.currency}
+                            {it.sale.toCurrency && it.sale.paid !== undefined && (
+                              <span className="text-[12px] font-semibold text-muted">
+                                {" "}
+                                → {num(it.sale.paid)} {it.sale.toCurrency}
+                              </span>
+                            )}
                           </p>
                           <p className="text-right font-mono text-[11px] text-subtle">
                             {it.time ? `${it.time} · ` : ""}≈ {usd(it.sale.usd)} · {it.sale.margin}%

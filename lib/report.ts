@@ -164,7 +164,7 @@ export function reportHtml(r: ReportData, logoUrl: string): string {
       if (it.kind === "sale") {
         const x = it.sale;
         return `<tr><td dir="ltr">${x.date}</td><td dir="ltr">${it.time ?? "—"}</td><td><span class="tag sale">بيع</span></td>
-          <td dir="ltr">${num(x.amount)} ${esc(x.currency)}</td><td dir="ltr">${usd(x.usd)}</td><td dir="ltr">${num(x.margin)}%</td>
+          <td dir="ltr">${num(x.amount)} ${esc(x.currency)}${x.toCurrency && x.paid !== undefined ? ` → ${num(x.paid)} ${esc(x.toCurrency)}` : ""}</td><td dir="ltr">${usd(x.usd)}</td><td dir="ltr">${num(Number(x.margin))}%</td>
           <td dir="ltr" class="pos">+${usd(x.profit)}</td></tr>`;
       }
       const m = it.move, dep = it.kind === "deposit";
