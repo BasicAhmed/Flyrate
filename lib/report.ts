@@ -299,3 +299,142 @@ export function openReport(r: ReportData) {
   }
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+
+/* ================= Capital statement (كشف رأس المال) ================= */
+
+export interface StatementLine {
+  date: string;
+  kind: "deposit" | "withdraw" | "profit";
+  label: string;
+  amount: number; // signed: + adds to capital, − takes from it
+  balance: number; // capital right after this line
+  moveId?: string;
+}
+
+export interface CapitalStatement {
+  period: Period;
+  opening: number;
+  closing: number;
+  deposits: number;
+  withdrawals: number;
+  profit: number;
+  lines: StatementLine[]; // oldest first
+}
+
+/** Bank-statement style view of capital: opening balance, then every
+ *  deposit, withdrawal and day of profit in order, with the balance after
+ *  each, then the closing balance. */
+export function buildCapitalStatement(cap: CapitalSettings, sales: SaleEntry[], period: Period): CapitalStatement {
+  const from = period.from < cap.startDate ? cap.startDate : period.from;
+  const counted = sales.filter((s) => s.date >= cap.startDate);
+  const moves = cap.moves.filter((m) => m.date >= cap.startDate);
+
+  // Everything before the period → opening balance
+  let opening = cap.starting;
+  for (const s of counted) if (s.date < from) opening += s.profit;
+  for (const m of moves) if (m.date < from) opening += m.type === "deposit" ? m.amount : -m.amount;
+
+  const inRange = (d: string) => d >= from && d <= period.to;
+  const profitByDay = new Map<string, { profit: number; count: number }>();
+  for (const s of counted) {
+    if (!inRange(s.date)) continue;
+    const v = profitByDay.get(s.date) ?? { profit: 0, count: 0 };
+    v.profit += s.profit; v.count += 1;
+    profitByDay.set(s.date, v);
+  }
+
+  type Raw = Omit<StatementLine, "balance">;
+  const raw: Raw[] = [
+    ...moves
+      .filter((m) => inRange(m.date))
+      .map((m): Raw => ({
+        date: m.date,
+        kind: m.type,
+        label: m.note || (m.type === "deposit" ? "إيداع" : "سحب"),
+        amount: m.type === "deposit" ? m.amount : -m.amount,
+        moveId: m.id,
+      })),
+    ...[...profitByDay.entries()].map(([date, v]): Raw => ({
+      date,
+      kind: "profit",
+      label: `أرباح اليوم (${v.count} عملية)`,
+      amount: v.profit,
+    })),
+  ].sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.kind === "profit" ? 1 : -1));
+
+  let bal = opening;
+  const lines = raw.map((l) => ({ ...l, balance: (bal += l.amount) }));
+  const sum = (k: StatementLine["kind"]) => lines.filter((l) => l.kind === k).reduce((a, l) => a + Math.abs(l.amount), 0);
+
+  return {
+    period,
+    opening,
+    closing: bal,
+    deposits: sum("deposit"),
+    withdrawals: sum("withdraw"),
+    profit: sum("profit"),
+    lines,
+  };
+}
+
+export function statementHtml(st: CapitalStatement, logoUrl: string): string {
+  const change = st.closing - st.opening;
+  const pct = st.opening ? (change / st.opening) * 100 : 0;
+  const tag = (k: StatementLine["kind"]) =>
+    k === "deposit" ? `<span class="tag dep">إيداع</span>` : k === "withdraw" ? `<span class="tag wd">سحب</span>` : `<span class="tag sale">ربح</span>`;
+  const rows = st.lines
+    .map(
+      (l) => `<tr><td dir="ltr">${l.date}</td><td>${tag(l.kind)}</td><td>${esc(l.label)}</td>
+      <td dir="ltr" class="${l.amount >= 0 ? "pos" : "neg"}">${l.amount >= 0 ? "+" : "−"}${usd(Math.abs(l.amount))}</td>
+      <td dir="ltr"><b>${usd(l.balance)}</b></td></tr>`
+    )
+    .join("");
+  const generated = new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+  const range = st.period.from === "0000-01-01" ? "" : `<span dir="ltr">${st.period.from} → ${st.period.to}</span>`;
+  // Reuse the sales report's look by swapping its body.
+  const base = reportHtml(
+    { period: st.period, items: [], totals: { salesUsd: 0, profit: 0, count: 0, avgMargin: 0, deposits: 0, withdrawals: 0, activeDays: 0, bestDay: null }, byCurrency: [], byDay: [], capital: null },
+    logoUrl
+  );
+  const head = base.slice(0, base.indexOf("<div class=\"wrap\">")).replace(/<title>[^<]*<\/title>/, `<title>FlyRate — كشف رأس المال ${esc(st.period.label)}</title>`);
+  const tail = base.slice(base.indexOf("<script>"));
+  const kpi = (label: string, value: string, sub = "", tone = "") =>
+    `<div class="kpi ${tone}"><p class="l">${label}</p><p class="v" dir="ltr">${value}</p>${sub ? `<p class="s" dir="ltr">${sub}</p>` : ""}</div>`;
+  return `${head}<div class="wrap">
+<header>
+  <div class="brand"><img src="${esc(logoUrl)}" alt=""><div><h1>FlyRate</h1><p>كشف رأس المال — ${esc(st.period.label)}</p></div></div>
+  <div class="meta"><div>${range}</div><div dir="ltr">Generated ${esc(generated)}</div></div>
+</header>
+<div class="kpis">
+  ${kpi("الرصيد الافتتاحي", usd(st.opening))}
+  ${kpi("الرصيد الختامي", usd(st.closing), `${change >= 0 ? "+" : "−"}${usd(Math.abs(change))} (${pct.toFixed(2)}%)`, "hi")}
+  ${kpi("الإيداعات", `+${usd(st.deposits)}`)}
+  ${kpi("السحوبات", `−${usd(st.withdrawals)}`)}
+  ${kpi("الأرباح", `+${usd(st.profit)}`)}
+</div>
+<h2>الحركات (${st.lines.length})</h2>
+${st.lines.length === 0 ? `<div class="empty">ما في حركات في الفترة دي.</div>` : `
+<table><thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>المبلغ</th><th>الرصيد بعدها</th></tr></thead>
+<tbody>
+<tr><td colspan="4"><b>الرصيد الافتتاحي</b></td><td dir="ltr"><b>${usd(st.opening)}</b></td></tr>
+${rows}
+</tbody>
+<tfoot><tr><td colspan="4">الرصيد الختامي</td><td dir="ltr">${usd(st.closing)}</td></tr></tfoot>
+</table>`}
+<footer><span>FlyRate — flyrate.exchange</span><span>المبالغ بالدولار</span></footer>
+</div>
+${tail}`;
+}
+
+/** Opens any report HTML in a new tab for Save as PDF. */
+export function openHtml(html: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  const w = window.open(url, "_blank");
+  if (!w) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}

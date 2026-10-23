@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowDownToLine, ArrowUpFromLine, Landmark, Pencil, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, FileDown, Landmark, Pencil, Sparkles, Trash2, TrendingUp, X } from "lucide-react";
 import { getCapital, saveCapital, summarizeCapital, type CapitalMove, type CapitalSettings } from "@/lib/capital";
 import type { SaleEntry } from "@/lib/sales";
 import { cacheGet, cacheSet } from "@/lib/localCache";
+import { buildCapitalStatement, openHtml, periodFor, statementHtml, type PeriodKey } from "@/lib/report";
 
 const usd = (n: number, digits = 2) =>
   `$${n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
@@ -68,6 +69,9 @@ export default function CapitalCard({
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [showAllMoves, setShowAllMoves] = useState(false);
+  const [stPeriod, setStPeriod] = useState<PeriodKey>("thisMonth");
+  const [withProfit, setWithProfit] = useState(false);
+  const [moveDate, setMoveDate] = useState(today);
 
   useEffect(() => {
     setFailed(false);
@@ -121,7 +125,7 @@ export default function CapitalCard({
     if (!cap || !moveType || amount <= 0) return;
     const move: CapitalMove = {
       id: `${Date.now()}`,
-      date: today,
+      date: moveDate && moveDate <= today ? moveDate : today,
       type: moveType,
       amount,
       ...(moveNote.trim() ? { note: moveNote.trim() } : {}),
@@ -130,6 +134,7 @@ export default function CapitalCard({
     setMoveType(null);
     setMoveAmount("");
     setMoveNote("");
+    setMoveDate(today);
   }
 
   async function removeMove(m: CapitalMove) {
@@ -201,8 +206,9 @@ export default function CapitalCard({
   if (!s) return null;
   const netMoves = s.deposits - s.withdrawals;
   const projection30 = s.current + s.avgDailyProfit * 30;
-  const sortedMoves = [...cap.moves].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  const recentMoves = showAllMoves ? sortedMoves : sortedMoves.slice(0, 5);
+  const statement = buildCapitalStatement(cap, sales, periodFor(stPeriod, today));
+  const stLines = [...statement.lines].reverse().filter((l) => withProfit || l.kind !== "profit");
+  const shownLines = showAllMoves ? stLines : stLines.slice(0, 10);
 
   /* ---------- summary ---------- */
   return (
@@ -343,60 +349,153 @@ export default function CapitalCard({
                     {busy ? "…" : "حفظ"}
                   </button>
                 </div>
-                <input
-                  value={moveNote}
-                  onChange={(e) => setMoveNote(e.target.value)}
-                  placeholder="ملاحظة (اختياري)"
-                  className="field px-3 py-2 text-xs"
-                />
+                <div className="grid grid-cols-[1fr_auto] gap-2">
+                  <input
+                    value={moveNote}
+                    onChange={(e) => setMoveNote(e.target.value)}
+                    placeholder="ملاحظة (اختياري)"
+                    className="field px-3 py-2 text-xs"
+                  />
+                  <input
+                    type="date"
+                    value={moveDate}
+                    max={today}
+                    onChange={(e) => setMoveDate(e.target.value)}
+                    aria-label="التاريخ"
+                    className="field px-2 py-2 font-mono text-[11px]"
+                    dir="ltr"
+                  />
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {recentMoves.length > 0 && (
-          <ul className="mt-3 space-y-1.5">
-            {recentMoves.map((m) => (
-              <li key={m.id} className="flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
-                <span
-                  className={`rounded-lg p-1.5 ${
-                    m.type === "deposit" ? "bg-emerald-500/15 text-emerald-500" : "bg-red-500/15 text-red-500"
+        {/* Capital statement — every deposit / withdrawal with balance after */}
+        <div className="mt-4 rounded-2xl border border-border/60">
+          <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2.5">
+            <p className="text-xs font-bold text-ink">كشف رأس المال</p>
+            <button
+              onClick={() =>
+                openHtml(
+                  statementHtml(statement, `${window.location.origin}/logo-icon.png`),
+                  `flyrate-capital-${statement.period.from}-${statement.period.to}.html`
+                )
+              }
+              className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-white shadow-soft"
+            >
+              <FileDown size={12} /> PDF
+            </button>
+          </div>
+          <div className="space-y-2 px-3 py-2.5">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ["thisMonth", "هذا الشهر"],
+                  ["lastMonth", "الشهر الماضي"],
+                  ["all", "الكل"],
+                ] as const
+              ).map(([k, l]) => (
+                <button
+                  key={k}
+                  onClick={() => {
+                    setStPeriod(k);
+                    setShowAllMoves(false);
+                  }}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                    stPeriod === k ? "border-primary bg-primary/10 text-primary" : "border-border/70 text-muted"
                   }`}
                 >
-                  {m.type === "deposit" ? <ArrowDownToLine size={12} /> : <ArrowUpFromLine size={12} />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs text-ink">{m.note || (m.type === "deposit" ? "إيداع" : "سحب")}</p>
-                  <p className="font-mono text-[10px] text-subtle" dir="ltr">
-                    {m.date}
+                  {l}
+                </button>
+              ))}
+              <button
+                onClick={() => setWithProfit((v) => !v)}
+                className={`mr-auto rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                  withProfit ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-500" : "border-border/70 text-muted"
+                }`}
+              >
+                + الأرباح اليومية
+              </button>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 text-center">
+              {[
+                { l: "الافتتاحي", v: usd(statement.opening, 0), c: "text-ink" },
+                { l: "إيداع", v: `+${usd(statement.deposits, 0)}`, c: "text-emerald-500" },
+                { l: "سحب", v: `−${usd(statement.withdrawals, 0)}`, c: "text-red-500" },
+                { l: "الختامي", v: usd(statement.closing, 0), c: "text-primary" },
+              ].map((b) => (
+                <div key={b.l} className="rounded-lg bg-surface2 px-1.5 py-2 shadow-well">
+                  <p className="text-[9px] text-subtle">{b.l}</p>
+                  <p className={`truncate font-mono text-[11px] font-bold ${b.c}`} dir="ltr">
+                    {b.v}
                   </p>
                 </div>
-                <span
-                  className={`font-mono text-xs font-bold ${m.type === "deposit" ? "text-emerald-500" : "text-red-500"}`}
-                  dir="ltr"
-                >
-                  {m.type === "deposit" ? "+" : "−"}
-                  {usd(m.amount)}
-                </span>
-                <button
-                  onClick={() => removeMove(m)}
-                  aria-label="حذف"
-                  className="rounded-lg p-1 text-subtle hover:bg-red-500/10 hover:text-red-500"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {sortedMoves.length > 5 && (
-          <button
-            onClick={() => setShowAllMoves((v) => !v)}
-            className="mt-2 w-full rounded-xl py-2 text-[11px] font-semibold text-primary hover:bg-primary/5"
-          >
-            {showAllMoves ? "عرض أقل" : `عرض الكل (${sortedMoves.length})`}
-          </button>
-        )}
+              ))}
+            </div>
+          </div>
+
+          {shownLines.length === 0 ? (
+            <p className="px-3 pb-4 pt-1 text-center text-[11px] text-subtle">ما في إيداع أو سحب في الفترة دي.</p>
+          ) : (
+            <ul className="divide-y divide-border/40 border-t border-border/60">
+              {shownLines.map((l, idx) => {
+                const move = l.moveId ? cap.moves.find((m) => m.id === l.moveId) : undefined;
+                const tone = l.kind === "withdraw" ? "text-red-500" : "text-emerald-500";
+                return (
+                  <li key={(l.moveId ?? "p") + l.date + idx} className="flex items-center gap-2.5 px-3 py-2">
+                    <span
+                      className={`rounded-lg p-1.5 ${
+                        l.kind === "withdraw"
+                          ? "bg-red-500/15 text-red-500"
+                          : l.kind === "deposit"
+                            ? "bg-emerald-500/15 text-emerald-500"
+                            : "bg-primary/10 text-primary"
+                      }`}
+                    >
+                      {l.kind === "deposit" ? (
+                        <ArrowDownToLine size={12} />
+                      ) : l.kind === "withdraw" ? (
+                        <ArrowUpFromLine size={12} />
+                      ) : (
+                        <TrendingUp size={12} />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs text-ink">{l.label}</p>
+                      <p className="font-mono text-[10px] text-subtle" dir="ltr">
+                        {l.date} · bal {usd(l.balance, 0)}
+                      </p>
+                    </div>
+                    <span className={`font-mono text-xs font-bold ${tone}`} dir="ltr">
+                      {l.amount >= 0 ? "+" : "−"}
+                      {usd(Math.abs(l.amount))}
+                    </span>
+                    {move ? (
+                      <button
+                        onClick={() => removeMove(move)}
+                        aria-label="حذف"
+                        className="rounded-lg p-1 text-subtle hover:bg-red-500/10 hover:text-red-500"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    ) : (
+                      <span className="w-[21px]" />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {stLines.length > 10 && (
+            <button
+              onClick={() => setShowAllMoves((v) => !v)}
+              className="w-full border-t border-border/60 py-2 text-[11px] font-semibold text-primary"
+            >
+              {showAllMoves ? "عرض أقل" : `عرض الكل (${stLines.length})`}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
