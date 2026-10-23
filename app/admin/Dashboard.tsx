@@ -3,7 +3,19 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { ArrowLeftRight, BarChart3, HandCoins, Landmark, LogOut, PlusCircle, Power, RefreshCw, TrendingUp } from "lucide-react";
+import {
+  ArrowLeftRight,
+  BarChart3,
+  ChevronDown,
+  HandCoins,
+  Landmark,
+  LogOut,
+  PlusCircle,
+  Power,
+  RefreshCw,
+  Settings2,
+  TrendingUp,
+} from "lucide-react";
 import {
   getRatesWithMargin,
   setFlowMargins,
@@ -28,10 +40,20 @@ import { PAIRS, CURRENCIES, type CurrencyCode } from "@/lib/corridors";
 import { cacheGet, cacheSet } from "@/lib/localCache";
 import { refreshSite } from "@/lib/refreshSite";
 import ProfitTab, { type View as ProfitView } from "./ProfitTab";
+import ThemeToggle from "@/components/ThemeToggle";
 
 type Tab = ProfitView | "rates";
 
 /** Bottom bar — every admin screen is one tap away. */
+/** Title + one-line hint shown at the top of each screen. */
+const SECTION: Record<Tab, { title: string; hint: string }> = {
+  add: { title: "تسجيل عملية", hint: "سجّل البيع وشوف ربح اليوم" },
+  rates: { title: "الأسعار", hint: "أسعار Binance والهوامش والاتجاهات" },
+  capital: { title: "رأس المال", hint: "رصيدك والإيداع والسحب" },
+  debts: { title: "المستحقات", hint: "مديون لنا ومديون له" },
+  reports: { title: "التقارير", hint: "السجل الكامل وتصدير PDF" },
+};
+
 const NAV: { id: Tab; label: string; icon: typeof TrendingUp }[] = [
   { id: "add", label: "تسجيل", icon: PlusCircle },
   { id: "rates", label: "الأسعار", icon: TrendingUp },
@@ -119,6 +141,8 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
   const [disabled, setDisabled] = useState<string[]>(cached?.disabled ?? []);
   const [auto, setAuto] = useState<AutoUpdateSettings | null>(null);
   const [savingAuto, setSavingAuto] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [pairFilter, setPairFilter] = useState<CurrencyCode | "all">("all");
   const [manualMyr, setManualMyr] = useState<number | null>(null);
   const [myrInput, setMyrInput] = useState("");
   const [savingMyr, setSavingMyr] = useState(false);
@@ -354,30 +378,43 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
 
   return (
     <div className="min-h-screen pb-32">
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-bg/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl border border-border bg-surface2 p-1.5 shadow-soft">
-              <Image src="/logo-icon.png" alt="" width={34} height={28} className="h-7 w-auto" />
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-bg/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-5 py-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="shrink-0 rounded-xl border border-border bg-surface p-1.5 shadow-soft">
+              <Image src="/logo-icon.png" alt="" width={34} height={28} className="h-6 w-auto" />
             </div>
-            <div className="leading-tight">
+            <div className="min-w-0 leading-tight">
               <p className="font-display text-sm font-bold text-ink" dir="ltr">
-                Fly<span className="text-primary">Rate</span>
+                Fly<span className="text-primary">Rate</span>{" "}
+                <span className="text-[11px] font-medium text-subtle">Admin</span>
               </p>
-              <p className="text-[11px] text-subtle">لوحة الإدارة</p>
+              <p className="truncate text-[11px] text-subtle">
+                {new Date().toLocaleDateString("ar-EG", { weekday: "long", day: "numeric", month: "long" })}
+              </p>
             </div>
           </div>
-          <button
-            onClick={onSignOut}
-            aria-label="تسجيل الخروج"
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-2 text-xs font-semibold text-muted shadow-soft transition-colors hover:text-ink"
-          >
-            <LogOut size={14} /> خروج
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <ThemeToggle />
+            <button
+              onClick={onSignOut}
+              aria-label="تسجيل الخروج"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted transition-colors hover:border-red-500/60 hover:text-red-500"
+            >
+              <LogOut size={15} />
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-3xl px-5 pt-6">
+      <div className="mx-auto max-w-3xl px-5 pt-5">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-ink">{SECTION[tab].title}</h1>
+            <p className="mt-0.5 text-xs text-muted">{SECTION[tab].hint}</p>
+          </div>
+        </div>
+
         {saveError && (
           <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-500">
             فشل الحفظ: {saveError}
@@ -416,6 +453,21 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
               </div>
               {fxMessage && <p className="border-t border-border/60 px-5 py-2.5 text-xs text-muted">{fxMessage}</p>}
 
+              <button
+                onClick={() => setShowSettings((v) => !v)}
+                className="flex w-full items-center justify-between border-t border-border/60 px-5 py-3.5 text-sm font-semibold text-ink"
+              >
+                <span className="flex items-center gap-2">
+                  <Settings2 size={15} className="text-primary" /> إعدادات الأسعار
+                  <span className="text-[11px] font-normal text-subtle">
+                    هامش {margin}% · {auto ? (auto.enabled ? `تلقائي كل ${auto.minutes} د` : "التلقائي متوقف") : "…"}
+                    {manualMyr ? " · MYR يدوي" : ""}
+                  </span>
+                </span>
+                <ChevronDown size={16} className={`text-subtle transition-transform ${showSettings ? "rotate-180" : ""}`} />
+              </button>
+              {showSettings && (
+                <>
               {/* Auto refresh from Binance */}
               <div className="border-t border-border/60 px-5 py-4">
                 <div className="flex items-center justify-between gap-2">
@@ -542,6 +594,8 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                   </div>
                 )}
               </div>
+                </>
+              )}
             </div>
 
             {/* Active flows summary */}
@@ -567,9 +621,31 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
               </div>
             </div>
 
+            {/* Currency filter — only show the pairs you care about */}
+            <div className="-mx-5 overflow-x-auto px-5">
+              <div className="flex w-max gap-1.5" dir="ltr">
+                {(["all", ...Array.from(new Set(PAIRS.flatMap((p) => [p.a, p.b])))] as (CurrencyCode | "all")[]).map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setPairFilter(c)}
+                    className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      pairFilter === c ? "border-primary bg-primary text-white" : "border-border/70 bg-surface text-muted"
+                    }`}
+                  >
+                    {c === "all" ? "الكل" : (
+                      <>
+                        <span>{CURRENCIES[c].flag}</span>
+                        <span className="font-mono">{c}</span>
+                      </>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Pair cards */}
             <div className="grid gap-3 sm:grid-cols-2">
-              {PAIRS.map(({ a, b }) => {
+              {PAIRS.filter(({ a, b }) => pairFilter === "all" || a === pairFilter || b === pairFilter).map(({ a, b }) => {
                 const row = rates.find((r) => r.from === a && r.to === b);
                 if (!row) return null;
                 const fromC = CURRENCIES[a];

@@ -109,3 +109,9 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
 }
+
+/* Light mode: deeper green/red/amber so numbers stay readable on white */
+.light .text-emerald-500 { color: rgb(5 150 105); }
+.light .text-red-500 { color: rgb(220 38 38); }
+.light .text-amber-500 { color: rgb(217 119 6); }
+.light .text-amber-600 { color: rgb(180 83 9); }
