@@ -13,6 +13,7 @@ import {
   Power,
   RefreshCw,
   Settings2,
+  Sparkles,
   TrendingUp,
 } from "lucide-react";
 import {
@@ -51,6 +52,7 @@ const SECTION: Record<Tab, { title: string; hint: string }> = {
   capital: { title: "رأس المال", hint: "رصيدك والإيداع والسحب" },
   debts: { title: "المستحقات", hint: "مديون لنا ومديون له" },
   reports: { title: "التقارير", hint: "السجل الكامل وتصدير PDF" },
+  insights: { title: "النصائح", hint: "إزاي تكمل هدف اليوم" },
 };
 
 const NAV: { id: Tab; label: string; icon: typeof TrendingUp }[] = [
@@ -387,6 +389,15 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
             </span>
           </div>
           <div className="flex items-center gap-2 [&>button]:border-0 [&>button]:bg-surface [&>button]:text-muted">
+            <button
+              onClick={() => setTab("insights")}
+              aria-label="النصائح"
+              className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+                tab === "insights" ? "!bg-primary !text-white" : "!text-primary"
+              }`}
+            >
+              <Sparkles size={16} />
+            </button>
             <ThemeToggle />
             <button
               onClick={onSignOut}
@@ -421,6 +432,8 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
           <div className={tab !== "rates" ? "" : "hidden"}>
             <ProfitTab
               view={tab === "rates" ? lastProfitView : tab}
+              disabledFlows={disabled}
+              onOpenInsights={() => setTab("insights")}
               rates={rates}
               defaultMargin={margin}
               authReady={authReady}

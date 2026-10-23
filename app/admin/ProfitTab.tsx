@@ -2,7 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeftRight, CalendarDays, ChevronDown, Pencil, Plus, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
+import {
+  ArrowLeftRight,
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { convertBetween, convertMid, type RateRow } from "@/lib/rates";
 import { getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, deleteSale, getSales, type SaleEntry } from "@/lib/sales";
@@ -12,6 +24,7 @@ import { cacheGet, cacheSet } from "@/lib/localCache";
 import CapitalCard from "./CapitalCard";
 import HistoryPanel from "./HistoryPanel";
 import DebtsPanel from "./DebtsPanel";
+import InsightsPanel from "./InsightsPanel";
 
 function todayStr() {
   const d = new Date();
@@ -43,7 +56,7 @@ function toUsd(amount: number, currency: SaleEntry["currency"], rates: RateRow[]
   return convertMid(amount, currency, "USDT", rates);
 }
 
-export type View = "add" | "capital" | "debts" | "reports";
+export type View = "add" | "capital" | "debts" | "reports" | "insights";
 
 export default function ProfitTab({
   rates,
@@ -51,8 +64,12 @@ export default function ProfitTab({
   authReady,
   onError,
   view,
+  disabledFlows = [],
+  onOpenInsights,
 }: {
   view: View; // which section the bottom bar has open
+  disabledFlows?: string[];
+  onOpenInsights?: () => void;
   rates: RateRow[];
   defaultMargin: number;
   authReady: boolean; // sales are private — only readable once the session is restored
@@ -330,6 +347,26 @@ export default function ProfitTab({
             </AnimatePresence>
           </div>
         </div>
+      )}
+
+      {view === "add" && onOpenInsights && (
+        <button
+          onClick={onOpenInsights}
+          className="card-sm flex w-full items-center gap-3 px-4 py-3 text-right"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+            <Sparkles size={17} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-bold text-ink">نصائح لتحقيق الهدف</span>
+            <span className="block text-[11px] text-subtle">أسعار اليوم المناسبة وإيه تبيع عشان تكمل الهدف</span>
+          </span>
+          <ChevronLeft size={16} className="shrink-0 text-subtle" />
+        </button>
+      )}
+
+      {view === "insights" && (
+        <InsightsPanel sales={sales} rates={rates} target={dailyTarget} today={today} disabledFlows={disabledFlows} />
       )}
 
       {view === "add" && (
