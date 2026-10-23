@@ -6,7 +6,7 @@ import { ArrowLeftRight, CalendarDays, ChevronDown, Pencil, Plus, RefreshCw, Rot
 import { convertBetween, convertMid, type RateRow } from "@/lib/rates";
 import { getDailyTarget, setDailyTarget } from "@/lib/settings";
 import { addSale, deleteSale, getSales, type SaleEntry } from "@/lib/sales";
-import { CURRENCIES, FROM_CURRENCIES, isMultiplyCorridor, validToCurrencies, type CurrencyCode } from "@/lib/corridors";
+import { CURRENCIES, FROM_CURRENCIES, isForwardDirection, isMultiplyCorridor, validToCurrencies, type CurrencyCode } from "@/lib/corridors";
 import { formatSmart } from "@/lib/format";
 import { cacheGet, cacheSet } from "@/lib/localCache";
 import CapitalCard from "./CapitalCard";
@@ -106,11 +106,20 @@ export default function ProfitTab({
   const suggested = amountNum > 0 ? convertBetween(amountNum, fromC, flowTo, rates) : null;
   const paidNum = paidInput === null ? suggested : parseNum(paidInput);
   const paidEdited = paidInput !== null && suggested !== null && Math.abs((paidNum ?? 0) - suggested) > 0.004;
-  // Profit = value of what came in − value of what went out, both at market (no margin)
+  // Profit is measured against the real Binance price for this direction
+  // (the same price the margin is added to), not the mid price — so with the
+  // default payout the real margin equals the set margin exactly.
+  //   forward a→b: customer rate = buy  × (1 + m)
+  //   reverse b→a: customer rate = sell × (1 − m)
+  const forward = isForwardDirection(fromC, flowTo);
+  const basePrice = flowRow ? (forward ? flowRow.buyPrice ?? flowRow.marketPrice : flowRow.sellPrice ?? flowRow.marketPrice) : null;
+  // What the customer would get at the raw Binance price (no margin)
+  const atBinance =
+    amountNum > 0 && basePrice ? (isMultiplyCorridor(fromC, flowTo) ? amountNum * basePrice : amountNum / basePrice) : null;
   const previewUsd = amountNum > 0 ? toUsd(amountNum, fromC, rates) : null;
-  const outUsd = paidNum && paidNum > 0 ? toUsd(paidNum, flowTo, rates) : null;
-  const previewProfit = previewUsd !== null && outUsd !== null ? previewUsd - outUsd : null;
-  const effMargin = previewProfit !== null && previewUsd ? (previewProfit / previewUsd) * 100 : null;
+  const profitInTo = atBinance !== null && paidNum && paidNum > 0 ? atBinance - paidNum : null;
+  const previewProfit =
+    profitInTo === null ? null : (Math.sign(profitInTo) || 1) * (toUsd(Math.abs(profitInTo), flowTo, rates) ?? 0);
   const liveMargin = flowRow?.marginPercent ?? defaultMargin;
   const rateLine = (r: number) =>
     isMultiplyCorridor(fromC, flowTo) ? `1 ${fromC} = ${formatSmart(r)} ${flowTo}` : `1 ${flowTo} = ${formatSmart(r)} ${fromC}`;
@@ -120,6 +129,9 @@ export default function ProfitTab({
         ? paidNum / amountNum
         : amountNum / paidNum
       : null;
+  // Real margin, the same way the site applies it to the Binance price
+  const effMargin =
+    effRate !== null && basePrice ? (forward ? (effRate / basePrice - 1) * 100 : (1 - effRate / basePrice) * 100) : null;
   const diffPaid = paidEdited && suggested !== null && paidNum !== null ? paidNum - suggested : 0;
   const diffUsd = paidEdited && suggested !== null ? (toUsd(Math.abs(diffPaid), flowTo, rates) ?? 0) : 0;
 
