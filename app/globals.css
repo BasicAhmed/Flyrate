@@ -100,6 +100,10 @@
   @apply inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-b from-whatsapp to-whatsapp-dark font-bold text-white shadow-[0_1px_0_0_rgba(255,255,255,0.3)_inset,0_10px_28px_-8px_rgba(37,211,102,0.65)] transition-all hover:-translate-y-px hover:brightness-105 active:translate-y-0 disabled:pointer-events-none disabled:opacity-40 disabled:shadow-none;
 }
 
+/* Horizontal chip rows: scroll without a visible bar */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
 /* Hide number-input spinners — amounts are typed, not stepped */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
