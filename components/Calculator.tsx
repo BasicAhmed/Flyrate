@@ -132,11 +132,7 @@ function CurrencyPicker({
     setQ("");
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
     window.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
   const list = options.filter((o) => {
@@ -148,7 +144,7 @@ function CurrencyPicker({
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center"
+          className="fixed inset-0 z-[60] flex touch-none items-end justify-center overscroll-none sm:items-center"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -158,10 +154,10 @@ function CurrencyPicker({
             role="dialog"
             aria-modal="true"
             aria-label={title}
-            initial={{ y: 40, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 40, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 420, damping: 36 }}
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
             className="relative max-h-[80vh] w-full overflow-hidden rounded-t-[28px] border border-border/70 bg-surface shadow-lift sm:max-w-md sm:rounded-[28px]"
           >
             <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-border sm:hidden" />
@@ -182,7 +178,7 @@ function CurrencyPicker({
                 />
               </label>
             </div>
-            <ul className="max-h-[56vh] overflow-y-auto px-2 pb-[max(env(safe-area-inset-bottom),12px)]">
+            <ul className="max-h-[56vh] touch-pan-y overflow-y-auto overscroll-contain px-2 pb-[max(env(safe-area-inset-bottom),12px)]">
               {list.map((o) => {
                 const sel = o.code === value;
                 const paused = isPaused?.(o.code);
@@ -477,7 +473,12 @@ export default function Calculator(props: { rates: RateRow[]; disabledFlows?: st
     if (!c) return null;
     return (
       <button
-        onClick={() => setPicker(side)}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          (document.activeElement as HTMLElement | null)?.blur(); // close the keyboard first
+          setPicker(side);
+        }}
         aria-label={side === "from" ? "اختيار عملة الإرسال" : "اختيار عملة الاستلام"}
         className="flex shrink-0 items-center gap-2 rounded-full bg-surface py-1.5 pl-2.5 pr-1.5 shadow-soft ring-1 ring-border/70 transition-transform active:scale-95"
       >
@@ -494,7 +495,10 @@ export default function Calculator(props: { rates: RateRow[]; disabledFlows?: st
     const country = side === "send" ? fromCurrency.name : toCurrency?.name;
     return (
       <div
-        onClick={() => document.getElementById(`calc-${side}`)?.focus()}
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest("button")) return;
+          document.getElementById(`calc-${side}`)?.focus();
+        }}
         className={`relative cursor-text rounded-[22px] p-4 transition-all duration-200 sm:p-5 ${
           active ? "bg-surface2 ring-2 ring-primary/60" : "bg-surface2/70 ring-1 ring-border/60"
         }`}
@@ -533,6 +537,7 @@ export default function Calculator(props: { rates: RateRow[]; disabledFlows?: st
             {QUICK_AMOUNTS[fromCode].map((q) => (
               <button
                 key={q}
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setMode("send");
