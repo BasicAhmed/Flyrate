@@ -50,10 +50,51 @@ const config: Config = {
           "0%": { opacity: "0", transform: "translateY(16px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        // Hero headline: each word slides up out of a soft blur
+        "word-in": {
+          "0%": { opacity: "0", transform: "translateY(55%)", filter: "blur(8px)" },
+          "100%": { opacity: "1", transform: "translateY(0)", filter: "blur(0)" },
+        },
+        // Floating rate chips on the flight map
+        float: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-8px)" },
+        },
+        // Route lines: dashes flowing along the path
+        "dash-flow": {
+          "0%": { strokeDashoffset: "24" },
+          "100%": { strokeDashoffset: "0" },
+        },
+        // Route lines draw themselves in once
+        draw: {
+          "0%": { strokeDashoffset: "var(--len, 400)" },
+          "100%": { strokeDashoffset: "0" },
+        },
+        // City dots: expanding ring
+        ping2: {
+          "0%": { transform: "scale(1)", opacity: "0.7" },
+          "100%": { transform: "scale(3.2)", opacity: "0" },
+        },
+        // Slow ambient glow drift behind the hero
+        drift: {
+          "0%, 100%": { transform: "translate(0,0) scale(1)" },
+          "50%": { transform: "translate(6%, -4%) scale(1.08)" },
+        },
+        shimmer: {
+          "0%": { backgroundPosition: "200% 0" },
+          "100%": { backgroundPosition: "-200% 0" },
+        },
       },
       animation: {
         ticker: "ticker 38s linear infinite",
         rise: "rise 0.6s cubic-bezier(0.16,1,0.3,1) forwards",
+        "word-in": "word-in 0.8s cubic-bezier(0.16,1,0.3,1) both",
+        float: "float 5s ease-in-out infinite",
+        "dash-flow": "dash-flow 1.2s linear infinite",
+        draw: "draw 1.6s cubic-bezier(0.65,0,0.35,1) both",
+        ping2: "ping2 2.4s cubic-bezier(0,0,0.2,1) infinite",
+        drift: "drift 14s ease-in-out infinite",
+        shimmer: "shimmer 6s linear infinite",
       },
     },
   },

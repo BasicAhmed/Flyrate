@@ -10,6 +10,7 @@ import HowItWorks from "@/components/HowItWorks";
 import Reviews from "@/components/Reviews";
 import FAQ from "@/components/FAQ";
 import Contact from "@/components/Contact";
+import CTABand from "@/components/CTABand";
 import Footer from "@/components/Footer";
 import FloatingWhatsApp from "@/components/FloatingWhatsApp";
 import { LiveRatesProvider } from "@/components/LiveRates";
@@ -31,6 +32,7 @@ export default async function Home() {
       <Reviews />
       <FAQ />
       <Contact />
+      <CTABand />
       <Footer />
       <FloatingWhatsApp />
     </LiveRatesProvider>
