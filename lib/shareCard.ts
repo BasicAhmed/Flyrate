@@ -24,23 +24,23 @@ type C = CanvasRenderingContext2D;
  * (SDG ✈ MYR), with a tear-off stub holding the QR code. */
 
 const W = 1080, H = 1350;
-const AR = "'IBM Plex Sans Arabic', sans-serif";
-const MONO = "'IBM Plex Mono', monospace";
+export const AR = "'IBM Plex Sans Arabic', sans-serif";
+export const MONO = "'IBM Plex Mono', monospace";
 const EMOJI = "'Apple Color Emoji', 'Noto Color Emoji', sans-serif";
-const OR = "#FE5200";
-const OR_HOT = "#FF7A3D";
-const SITE = "flyrate.exchange";
-const GOOD = "#10B981", BAD = "#EF4444";
+export const OR = "#FE5200";
+export const OR_HOT = "#FF7A3D";
+export const SITE = "flyrate.exchange";
+export const GOOD = "#10B981", BAD = "#EF4444";
 
 /* ---------------- drawing helpers ---------------- */
-function rr(c: C, x: number, y: number, w: number, h: number, r: number) {
+export function rr(c: C, x: number, y: number, w: number, h: number, r: number) {
   c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
   c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
 }
-function img(src: string): Promise<HTMLImageElement | null> {
+export function img(src: string): Promise<HTMLImageElement | null> {
   return new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
 }
-async function qr(text: string, dark = "#111", light = "#fff") {
+export async function qr(text: string, dark = "#111", light = "#fff") {
   const q = (await import("qrcode-generator")).default(0, "M"); q.addData(text); q.make();
   const n = q.getModuleCount(), s = 10, cv = document.createElement("canvas"); cv.width = cv.height = n * s;
   const c = cv.getContext("2d")!; c.fillStyle = light; c.fillRect(0, 0, n * s, n * s); c.fillStyle = dark;
@@ -48,26 +48,26 @@ async function qr(text: string, dark = "#111", light = "#fff") {
   return cv;
 }
 /** Largest font size (stepping down from `start`) at which `t` fits in `max` px. */
-function fit(c: C, t: string, f: (s: number) => string, start: number, min: number, max: number) {
+export function fit(c: C, t: string, f: (s: number) => string, start: number, min: number, max: number) {
   let s = start; while (s > min) { c.font = f(s); if (c.measureText(t).width <= max) break; s -= 2; } return s;
 }
-function T(c: C, t: string, x: number, y: number, font: string, color: string | CanvasGradient, align: CanvasTextAlign = "center", dir: CanvasDirection = "rtl") {
+export function T(c: C, t: string, x: number, y: number, font: string, color: string | CanvasGradient, align: CanvasTextAlign = "center", dir: CanvasDirection = "rtl") {
   c.font = font; c.fillStyle = color; c.textAlign = align; c.direction = dir; c.fillText(t, x, y);
 }
-function width(c: C, t: string, font: string) { c.font = font; return c.measureText(t).width; }
-function flag(c: C, f: string, x: number, y: number, size: number) {
+export function width(c: C, t: string, font: string) { c.font = font; return c.measureText(t).width; }
+export function flag(c: C, f: string, x: number, y: number, size: number) {
   c.save(); c.font = `${size}px ${EMOJI}`; c.textAlign = "center"; c.textBaseline = "middle"; c.direction = "ltr"; c.fillText(f, x, y); c.restore();
 }
-function glow(c: C, x: number, y: number, r: number, color: string, alpha: number) {
+export function glow(c: C, x: number, y: number, r: number, color: string, alpha: number) {
   const g = c.createRadialGradient(x, y, 0, x, y, r);
   g.addColorStop(0, color.replace("ALPHA", String(alpha))); g.addColorStop(1, color.replace("ALPHA", "0"));
   c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
 }
 const trendCol = (t: P["trendColor"]) => (t === "good" ? GOOD : t === "bad" ? BAD : OR);
-async function fonts() {
+export async function fonts() {
   try { await Promise.all([`700 90px ${MONO}`, `600 40px ${MONO}`, `700 40px ${AR}`, `500 28px ${AR}`].map((s) => document.fonts.load(s))); } catch {}
 }
-const blob = (cv: HTMLCanvasElement) => new Promise<Blob>((r) => cv.toBlob((b) => r(b!), "image/png"));
+export const blob = (cv: HTMLCanvasElement) => new Promise<Blob>((r) => cv.toBlob((b) => r(b!), "image/png"));
 function todayLabel() {
   return new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
@@ -82,7 +82,7 @@ function changePct(pts: ShareCardHistoryPoint[]) {
 }
 
 /** Smooth area chart. Returns false if there isn't enough history. */
-function chart(
+export function chart(
   c: C, pts: ShareCardHistoryPoint[], x: number, y: number, w: number, h: number,
   o: { line: string; fillTop: string; grid?: string; dot?: string; dotRing?: string; lw?: number }
 ) {
@@ -113,7 +113,7 @@ function chart(
 }
 
 /** Simple white plane silhouette pointing right, centred on (x, y). */
-function plane(c: C, x: number, y: number, size: number, color: string) {
+export function plane(c: C, x: number, y: number, size: number, color: string) {
   const k = size / 100;
   c.save(); c.translate(x, y); c.scale(k, k); c.fillStyle = color; c.beginPath();
   c.moveTo(50, 0); c.quadraticCurveTo(46, -7, 36, -7);           // nose → top of body

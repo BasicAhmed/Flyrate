@@ -13,6 +13,7 @@ import {
   Power,
   RefreshCw,
   Settings2,
+  Image as ImageIcon,
   Sparkles,
   TrendingUp,
 } from "lucide-react";
@@ -39,6 +40,8 @@ import { flowKey, getDisabledFlows, setDisabledFlows } from "@/lib/flows";
 import { PAIRS, CURRENCIES, type CurrencyCode } from "@/lib/corridors";
 import { cacheGet, cacheSet } from "@/lib/localCache";
 import { refreshSite } from "@/lib/refreshSite";
+import { getRateHistory } from "@/lib/rateHistory";
+import { BOARD_PAIRS, buildBoard, createDailyBoardBlob } from "@/lib/dailyBoard";
 import ProfitTab, { type View as ProfitView } from "./ProfitTab";
 import ThemeToggle from "@/components/ThemeToggle";
 
@@ -136,6 +139,39 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
   const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fxUpdating, setFxUpdating] = useState(false);
+  const [boardBusy, setBoardBusy] = useState(false);
+
+  /** "أسعار اليوم" picture for the WhatsApp group: share sheet on phones,
+   *  download elsewhere. */
+  async function shareDailyBoard() {
+    setBoardBusy(true);
+    try {
+      const entries = await Promise.all(
+        BOARD_PAIRS.map(async ([a, b]) => [`${a}_${b}`, await getRateHistory(a, b, 14)] as const)
+      );
+      const blob = await createDailyBoardBlob(buildBoard(rates, Object.fromEntries(entries)));
+      if (!blob) throw new Error("تعذر إنشاء الصورة على هذا الجهاز");
+      const name = `flyrate-${new Date().toISOString().slice(0, 10)}.png`;
+      const file = new File([blob], name, { type: "image/png" });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: "أسعار اليوم — FlyRate" });
+        } catch {
+          // cancelled
+        }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    }
+    setBoardBusy(false);
+  }
   const [fxMessage, setFxMessage] = useState<string | null>(null);
   const [sdgOverrideInput, setSdgOverrideInput] = useState("");
   const [savingSdgOverride, setSavingSdgOverride] = useState(false);
@@ -463,6 +499,14 @@ export default function AdminDashboard({ onSignOut, authReady }: { onSignOut: ()
                 </button>
               </div>
               {fxMessage && <p className="mt-3 rounded-xl bg-surface2 px-3 py-2 text-xs text-muted">{fxMessage}</p>}
+              <button
+                onClick={shareDailyBoard}
+                disabled={boardBusy}
+                className="btn-ghost mt-3 h-11 w-full text-[13px]"
+              >
+                <ImageIcon size={15} className="text-primary" />
+                {boardBusy ? "جارٍ تجهيز الصورة…" : "صورة أسعار اليوم للواتساب"}
+              </button>
             </div>
 
             {/* Settings + flows */}
